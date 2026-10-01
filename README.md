@@ -9,7 +9,7 @@ issues by title and date, keeps provenance, and runs the issue-level stages. It
 generalizes the pipeline built for [The Negro World Archive](https://negroworldarchive.org).
 
 > **Status: early.** Working so far: the project format, bringing in issues from the
-> Internet Archive or your own PDFs, OCR, and `status`.
+> Internet Archive or your own PDFs, OCR, export, and `status`.
 
 ## Pipeline
 
@@ -20,7 +20,7 @@ generalizes the pipeline built for [The Negro World Archive](https://negroworlda
 | Remove duplicate page scans | `paperpress dedup` | planned |
 | Table of contents (LLM, **optional**) | `paperpress profile`, `paperpress enrich` | planned |
 | Browse and search on your own machine | `paperpress serve` | planned |
-| Text corpus for research | `paperpress export` | planned |
+| Text corpus for research | `paperpress export` | working |
 | Public static site with search | `paperpress build` | planned |
 
 The archive's text always comes from paperpress's own OCR. Any OCR that came with
@@ -97,6 +97,24 @@ unchanged: regions in reading order with boxes, labels, text and status. It also
 a `full_text.json` with the issue's text page by page, with hyphenated line breaks
 rejoined. Finished pages are skipped, so stopping and re-running picks up where it
 left off.
+
+## Export
+
+```bash
+paperpress export [TITLES...] [--out DIR] [--txt]
+```
+
+This writes the corpus to `export/`:
+- `pages.jsonl` and `pages.csv`: one row per page, with title, date, volume and
+  number, page, word count, a ready-made `citation` ("The Woman's Journal, vol. 43,
+  no. 5, February 3, 1912, p. 2"), a `source_url` that opens the page on the Internet
+  Archive (or `source_file` for your own PDFs), the page image, the OCR engine, and
+  the text in reading order.
+- `issues.csv`: one row per issue, without the text.
+- `txt/` (with `--txt`): one plain-text file per page.
+
+CSVs are UTF-8 with a byte-order mark so Excel opens them correctly. Issues that
+haven't been OCR'd yet are skipped and counted. Re-running replaces the export.
 
 ## Your own PDFs
 

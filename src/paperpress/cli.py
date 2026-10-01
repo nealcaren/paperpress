@@ -247,6 +247,36 @@ def ocr(titles, date_from, date_to, limit, force):
         raise click.ClickException(f"{len(failed)} issue(s) failed; re-run to retry")
 
 
+@main.command("export")
+@click.argument("titles", nargs=-1)
+@click.option("--out", type=click.Path(file_okay=False, path_type=Path),
+              help="Folder to write (default: export/ in the project).")
+@click.option("--txt", is_flag=True, help="Also write one plain-text file per page.")
+def export_cmd(titles, out, txt):
+    """Write the OCR'd text as a research corpus (JSONL + CSV, optional .txt).
+
+    One row per page with title, date, volume/number, page, word count, a
+    ready-made citation, a link back to the source, and the text in reading
+    order. Re-running replaces the previous export.
+    """
+    from .export import export
+
+    project = _project()
+    try:
+        slugs = [project.title(t).slug for t in titles] or list(project.titles)
+    except ProjectError as e:
+        raise click.ClickException(str(e))
+    dest = (out or project.root / "export").resolve()
+    s = export(project, slugs, dest, txt=txt)
+    if s["skipped"]:
+        click.echo(f"skipped {len(s['skipped'])} issue(s) not OCR'd yet "
+                   f"(run `paperpress ocr`)")
+    if not s["pages"]:
+        raise click.ClickException("nothing to export yet: no issue has been OCR'd")
+    click.echo(f"exported {s['issues']} issues, {s['pages']} pages, {s['words']:,} words "
+               f"-> {dest}")
+
+
 @main.command()
 def status():
     """Summarize what's in the project, title by title."""

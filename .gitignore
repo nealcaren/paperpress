@@ -6,3 +6,4 @@ __pycache__/
 # sample downloads (re-fetch with paperpress add ia)
 examples/*/titles/
 examples/*/ocr_run.log
+examples/*/export/

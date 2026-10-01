@@ -45,7 +45,10 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   issue done. Text clean-up (hyphen rejoin, line joining, dropping timeout/error placeholders)
   happens only when building `full_text.json`. Tests use a fake engine (anything with
   `describe()` and `page(image)`).
-- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | ocr | status`).
+- `export.py` turns `full_text.json` + `issue.json` into `export/` (pages.jsonl/csv, issues.csv,
+  optional txt/, README.txt), built in `export.partial` and swapped in. Page ids are
+  `<slug>_<issue-folder-name>_pNN`. IA page links are `<details-url>/page/n<source_leaf>`.
+- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | ocr | export | status`).
 - Source OCR (IA djvu text, PDF text layers) is a comparison baseline only. The archive's text
   will come from the `ocr` stage (newspaper-ocr, with reading order). LLM TOC enrichment
   (`profile`/`enrich`, ported from Negro World) is planned and optional, so nothing
