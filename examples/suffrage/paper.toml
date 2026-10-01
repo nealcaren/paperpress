@@ -1,0 +1,22 @@
+# Example project: three U.S. woman-suffrage periodicals on the Internet Archive.
+
+[project]
+name = "Suffrage Press"
+
+[[titles]]
+slug = "revolution"
+name = "The Revolution"
+kind = "newspaper"
+ia_query = "identifier:revolution-18*"
+
+[[titles]]
+slug = "womans-journal"
+name = "The Woman's Journal"
+kind = "newspaper"
+ia_query = "collection:pub_the-womans-journal"
+
+[[titles]]
+slug = "suffragist"
+name = "The Suffragist"
+kind = "newspaper"
+ia_query = "collection:pub_the-suffragist"
