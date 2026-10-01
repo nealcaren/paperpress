@@ -70,7 +70,10 @@ paperpress add ia <title> [IDENTIFIERS...] [--query Q] [--from DATE] [--to DATE]
   to keep native size). Higher resolution doesn't improve OCR on microfilm, and some
   IA periodicals were scanned at 800 ppi.
 - Each page records its IA IIIF image-service URL, so a published site can serve
-  IA's images instead of hosting its own.
+  IA's images instead of hosting its own, along with IA's guess at its printed page
+  number.
+- `paperpress refresh` updates already-fetched IA issues' metadata without
+  downloading the images again.
 
 ## OCR
 
@@ -148,6 +151,15 @@ This writes the corpus to `export/`:
   the text in reading order.
 - `issues.csv`: one row per issue, without the text.
 - `txt/` (with `--txt`): one plain-text file per page.
+
+Citations use the **printed** page number. Many periodicals number pages through the
+whole volume, so the sixth page of *The Woman's Journal* for February 10, 1912 is
+p. 46. paperpress reads the page numbers printed in each page's header or footer (and
+the source's own guesses, where it has confident ones) and finds the numbering most
+pages agree on. If it can't tell, citations use the page's position in the issue. To
+set the numbering for an issue by hand, add `"printed_offset": 40` to its `issue.json`
+(printed page = position + offset). Exports have both `page` (position) and
+`printed_page`.
 
 CSVs are UTF-8 with a byte-order mark so Excel opens them correctly. Issues that
 haven't been OCR'd yet are skipped and counted. Re-running replaces the export.

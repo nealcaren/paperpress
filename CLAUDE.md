@@ -69,7 +69,16 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   Negro World's profile keys.
 - Region labels become CSS classes in the reader with a `lab-` prefix. DocLayout has a
   label called `text`, which once collided with the page's own `.text` pane.
-- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | ocr | enrich | export | serve | status`).
+- `folios.py` works out printed page numbers: printed = position + one offset per issue,
+  voted on by folios in our OCR (short regions in the top 9% or bottom 7% of the page,
+  skipping the issue's year and day) plus IA's `source_page_number` when `pageProb` ≥ 80. It
+  needs ≥ 2 votes and twice the runner-up, otherwise there's no numbering. It's computed on
+  demand (lru_cache keyed on page-JSON mtimes), never stored; `issue.json` `printed_offset`
+  overrides it. Citations and contents lists use printed numbers.
+- IA page records carry `source_index` (position at IA, used for `/page/n<index>` links) and
+  `source_leaf` (scan leaf, from the canvas label, which `page_numbers.json` keys on). Issues
+  fetched by 0.1 stored the position as `source_leaf`; `paperpress refresh` repairs them.
+- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | refresh | ocr | enrich | export | serve | status`).
 - Source OCR (IA djvu text, PDF text layers) is a comparison baseline only. The archive's text
   will come from the `ocr` stage (newspaper-ocr, with reading order). LLM TOC enrichment
   (`profile`/`enrich`, ported from Negro World) is planned and optional, so nothing

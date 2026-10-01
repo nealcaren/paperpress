@@ -30,6 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .export import citation, human_date, page_span
+from .folios import printed, printed_pages
 from .ocr import NO_TEXT_STATUSES, region_text
 from .project import Project, page_name, read_issue
 from . import search as search_mod
@@ -185,11 +186,12 @@ def _contents(issue: Issue) -> str:
     if not f.exists():
         return ""
     toc = json.loads(f.read_text())
+    numbering = printed_pages(issue.dir, issue.rec)
 
     def entry(a):
         first = a["regions"][0]
         href = f"{issue.url}p/{first['page']}?r={urllib.parse.quote(first['ids'][0])}"
-        where = page_span(a["pages"])
+        where = page_span(printed(numbering, a["pages"]))
         by = f' <span class="by">{e(a["author"])}</span>' if a.get("author") else ""
         kind = a.get("section") or (a["type"] if a["type"] not in ("news", "other") else "")
         return (f'<li><a href="{href}">{e(a["title"])}</a>{by}'
@@ -258,7 +260,10 @@ def page_reader(cat: Catalog, issue: Issue, n: int, q: str, select: str = "") ->
     next_link = f'<a rel="next" href="{issue.url}p/{n + 1}{qs}">Page {n + 1} ›</a>' \
         if n < total else '<span></span>'
     img = f"/img/{issue.slug}/{urllib.parse.quote(issue.key)}/{n}"
-    cite = citation(t.name, issue.rec, n)
+    numbering = printed_pages(issue.dir, issue.rec)
+    cite = citation(t.name, issue.rec, printed(numbering, n))
+    printed_label = (f" <span class='meta'>(printed p. {numbering['pages'][n]})</span>"
+                     if numbering["pages"] and numbering["pages"][n] != n else "")
     body = f"""<div class="reader" data-w="{w}" data-h="{h}" data-select="{e(select)}">
   <section class="viewer">
     <div class="tools">
@@ -266,7 +271,7 @@ def page_reader(cat: Catalog, issue: Issue, n: int, q: str, select: str = "") ->
       <button type="button" data-zoom="0">Fit</button>
       <button type="button" data-zoom="1" aria-label="Zoom in">+</button>
       <label><input type="checkbox" id="boxes" checked> Boxes</label>
-      <span class="pager">{prev_link}<span>Page {n} of {total}</span>{next_link}</span>
+      <span class="pager">{prev_link}<span>Page {n} of {total}{printed_label}</span>{next_link}</span>
     </div>
     <div class="scroller"><div class="canvas">
       <img src="{img}" alt="Page {n} of {e(cite)}">

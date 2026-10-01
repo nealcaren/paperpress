@@ -180,6 +180,32 @@ def add_pdf(title, paths, date_format, ppi, copy, force, dry_run):
 
 @main.command()
 @click.argument("titles", nargs=-1)
+def refresh(titles):
+    """Update Internet Archive issues' metadata (page numbers, rights) without
+    downloading the images again, e.g. after upgrading paperpress."""
+    from .sources import ia
+
+    project = _project()
+    try:
+        slugs = [project.title(t).slug for t in titles] or list(project.titles)
+    except ProjectError as e:
+        raise click.ClickException(str(e))
+    done = failed = 0
+    for slug in slugs:
+        for d in project.issue_dirs(slug, include_undated=True):
+            if read_issue(d)["source"].get("type") != "internet_archive":
+                continue
+            try:
+                ia.refresh_issue(d)
+                done += 1
+            except ia.IAError as e:
+                failed += 1
+                click.echo(f"FAILED {d.relative_to(project.root)}: {e}", err=True)
+    click.echo(f"refreshed {done} issue(s)" + (f", {failed} failed" if failed else ""))
+
+
+@main.command()
+@click.argument("titles", nargs=-1)
 @click.option("--from", "date_from", help="Only issues on or after this date (YYYY-MM-DD).")
 @click.option("--to", "date_to", help="Only issues on or before this date (YYYY-MM-DD).")
 @click.option("--limit", type=int, help="OCR at most this many issues this run.")

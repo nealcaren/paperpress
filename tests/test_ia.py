@@ -133,3 +133,20 @@ def test_image_server_500_tries_a_neighbouring_width(project, fake_ia, monkeypat
     _, dest = ia.fetch_issue(project, "revolution", "r")
     assert read_issue(dest)["pages"][0]["width"] == 1999
     assert any(u.endswith("/full/1999,/0/default.jpg") for u in fake_ia["calls"])
+
+
+def test_manifest_leaf_labels_and_page_numbers():
+    m = manifest(3)
+    for i, c in enumerate(m["items"]):
+        c["label"] = {"none": [str(i + 2)]}           # cover leaves 0-1 not in the manifest
+    pages = ia.manifest_pages(m)
+    assert [(p.index, p.leaf) for p in pages] == [(0, 2), (1, 3), (2, 4)]
+    records = [{"source_leaf": p.leaf} for p in pages]
+    ia._attach_page_numbers(records, {3: ("26", 51), 4: ("27", 84)})
+    assert [(r["source_page_number"], r["source_page_prob"]) for r in records] == \
+        [(None, None), ("26", 51), ("27", 84)]
+
+
+def test_copyright_status_in_publisher_field():
+    rec = ia.build_issue_record("x", {"publisher": "Out-of-copyright"}, "wj", [], None)
+    assert rec["source"]["rights"] == "Out-of-copyright" and rec["source"]["publisher"] is None

@@ -80,21 +80,47 @@ def search(query: str, limit: int | None = None) -> Iterator[dict]:
 
 @dataclass
 class Page:
-    leaf: int
+    index: int            # position among the item's pages: IA's /page/n<index> URLs
+    leaf: int             # scan leaf number (scandata), which page_numbers.json keys on
     width: int
     height: int
     service: str          # IIIF image service base URL
 
 
 def manifest_pages(manifest: dict) -> list[Page]:
+    """Pages from a IIIF v3 manifest. Each canvas is labelled with its leaf
+    number, which is not always its position (cover leaves can be skipped)."""
     pages = []
-    for leaf, canvas in enumerate(manifest.get("items", [])):
+    for index, canvas in enumerate(manifest.get("items", [])):
         body = canvas["items"][0]["items"][0]["body"]
         services = body.get("service") or []
         service = services[0]["id"] if services else body["id"].rsplit("/full/", 1)[0]
-        pages.append(Page(leaf=leaf, width=canvas["width"], height=canvas["height"],
-                          service=service))
+        label = _first((canvas.get("label") or {}).get("none"))
+        leaf = _int(label)
+        pages.append(Page(index=index, leaf=index if leaf is None else leaf,
+                          width=canvas["width"], height=canvas["height"], service=service))
     return pages
+
+
+def page_numbers(identifier: str, files: list[dict]) -> dict[int, tuple[str, int | None]]:
+    """IA's printed-page-number guesses, {leaf: (number, probability 0-100)}.
+    Best effort: an item without the file, or a failed fetch, gives {}."""
+    name = next((f["name"] for f in files if f["name"].endswith("_page_numbers.json")), None)
+    if not name:
+        return {}
+    try:
+        data = json.loads(_get(f"https://archive.org/download/{identifier}/"
+                               f"{urllib.parse.quote(name)}"))
+    except (IAError, json.JSONDecodeError):
+        return {}
+    return {p["leafNum"]: (p["pageNumber"], p.get("pageProb"))
+            for p in data.get("pages", []) if p.get("pageNumber")}
+
+
+def _attach_page_numbers(records: list[dict], numbers: dict) -> None:
+    for r in records:
+        num, prob = numbers.get(r["source_leaf"], (None, None))
+        r["source_page_number"], r["source_page_prob"] = num, prob
 
 
 def _first(v):
@@ -162,7 +188,7 @@ def _download_pages(tmp: Path, pages: list[Page], *, native_ppi, ppi, max_width,
         return {"page": n, "image": f"images/{name}",
                 "width": w, "height": round(p.height * w / p.width),
                 "ppi": round(native_ppi * w / p.width) if native_ppi else None,
-                "source_leaf": p.leaf, "iiif_service": p.service}
+                "source_index": p.index, "source_leaf": p.leaf, "iiif_service": p.service}
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(one, enumerate(pages, start=1)))
@@ -174,6 +200,10 @@ def build_issue_record(identifier: str, meta: dict, title_slug: str,
     m = {k: _first(meta.get(k)) for k in
          ("title", "volume", "issue", "publisher", "licenseurl", "rights",
           "possible-copyright-status")}
+    # some periodical items (e.g. sim_ microfilm) put the copyright status in `publisher`
+    if m["publisher"] and "copyright" in str(m["publisher"]).lower():
+        m["possible-copyright-status"] = m["possible-copyright-status"] or m["publisher"]
+        m["publisher"] = None
     collections = meta.get("collection") or []
     return {
         "title": title_slug,
@@ -225,6 +255,7 @@ def fetch_issue(project: Project, title_slug: str, identifier: str, *,
     with staged_issue(dest) as tmp:
         records = _download_pages(tmp, pages, native_ppi=_int(meta.get("ppi")),
                                   ppi=ppi, max_width=max_width, workers=workers)
+        _attach_page_numbers(records, page_numbers(identifier, meta_all.get("files", [])))
         ocr_file = None
         djvu = next((f["name"] for f in meta_all.get("files", [])
                      if f["name"].endswith("_djvu.txt")), None)
@@ -235,3 +266,25 @@ def fetch_issue(project: Project, title_slug: str, identifier: str, *,
             ocr_file = "source/ia_ocr.txt"
         write_issue(tmp, build_issue_record(identifier, meta, title_slug, records, ocr_file))
     return ("fetched" if found else "fetched-undated"), dest
+
+
+def refresh_issue(issue_dir: Path) -> None:
+    """Update an already-fetched issue's page and rights metadata from IA without
+    downloading the images again (for issues fetched by older versions)."""
+    from ..project import read_issue
+
+    rec = read_issue(issue_dir)
+    identifier = rec["source"]["id"]
+    meta_all = _get_json(META_URL.format(id=identifier))
+    pages = manifest_pages(_get_json(MANIFEST_URL.format(id=identifier)))
+    if len(pages) != len(rec["pages"]):
+        raise IAError(f"{identifier}: IA now has {len(pages)} pages, the issue has "
+                      f"{len(rec['pages'])}; re-fetch it with --force")
+    for r, p in zip(rec["pages"], pages):
+        r["source_index"], r["source_leaf"] = p.index, p.leaf
+    _attach_page_numbers(rec["pages"], page_numbers(identifier, meta_all.get("files", [])))
+    fresh = build_issue_record(identifier, meta_all.get("metadata", {}), rec["title"],
+                               rec["pages"], rec["source"].get("ocr"))
+    rec["source"]["rights"] = fresh["source"]["rights"]
+    rec["source"]["publisher"] = fresh["source"]["publisher"]
+    write_issue(issue_dir, rec)

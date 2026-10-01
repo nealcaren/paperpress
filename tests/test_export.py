@@ -94,3 +94,11 @@ def test_page_span():
     assert page_span([5, 6, 7]) == "pp. 5–7"
     assert page_span([1, 6]) == "pp. 1, 6"
     assert page_span([6, 1, 2, 9, 10]) == "pp. 1–2, 6, 9–10"
+
+
+def test_citation_quotes_headlines_once():
+    rec = {"date": "1912-02-10", "date_precision": "day"}
+    assert citation("WJ", rec, 41, '"IF I WERE A WOMAN"') == \
+        '"IF I WERE A WOMAN," WJ, February 10, 1912, p. 41'
+    assert citation("WJ", rec, 41, 'Again “Taxation without Representation”.') == \
+        '"Again ‘Taxation without Representation’," WJ, February 10, 1912, p. 41'

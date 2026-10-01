@@ -26,14 +26,15 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import __version__
+from .folios import printed, printed_pages
 from .project import Project, read_issue
 
 PAGE_FIELDS = ["id", "title", "title_name", "date", "date_precision", "volume", "number",
-               "page", "pages_in_issue", "words", "citation", "source", "source_id",
+               "page", "printed_page", "pages_in_issue", "words", "citation", "source", "source_id",
                "source_url", "source_file", "image", "ocr_engine", "text"]
 ARTICLE_FIELDS = ["id", "title", "title_name", "date", "date_precision", "volume", "number",
                   "headline", "author", "author_confidence", "type", "section", "language",
-                  "is_advertisement", "start_page", "pages", "continued", "words", "citation",
+                  "is_advertisement", "start_page", "pages", "printed_pages", "continued", "words", "citation",
                   "source_url", "enrich_model", "text"]
 ISSUE_FIELDS = ["title", "title_name", "date", "date_precision", "volume", "number", "pages",
                 "words", "source", "source_id", "source_url", "source_file", "rights",
@@ -61,11 +62,20 @@ def page_span(pages: int | list[int]) -> str:
     return "pp. " + ", ".join(str(a) if a == b else f"{a}–{b}" for a, b in runs)
 
 
+def _quotable(headline: str) -> str:
+    """A headline ready to sit inside double quotes: drop quotes wrapping the whole
+    thing and trailing punctuation, and make inner double quotes single (Chicago)."""
+    h = headline.strip().rstrip(".,")
+    if len(h) > 1 and h[0] in "\"“" and h[-1] in "\"”":
+        h = h[1:-1].strip()
+    return h.replace("“", "‘").replace("”", "’").replace('"', "'").rstrip(".,")
+
+
 def citation(title_name: str, rec: dict, page: int | list[int],
              headline: str | None = None) -> str:
     """A footnote-ready reference, e.g. "The Woman's Journal, February 3, 1912, p. 2",
     or for an article '"Headline," The Suffragist, ..., pp. 5–7'."""
-    parts = [f'"{headline.rstrip(".,")},"' if headline else None, title_name]
+    parts = [f'"{_quotable(headline)},"' if headline else None, title_name]
     when = human_date(rec.get("date"), rec.get("date_precision"))
     if rec.get("volume"):
         parts.append(f"vol. {rec['volume']}" + (f", no. {rec['number']}" if rec.get("number")
@@ -77,9 +87,11 @@ def citation(title_name: str, rec: dict, page: int | list[int],
 def _source_fields(rec: dict, page: dict | None = None) -> dict:
     src = rec.get("source", {})
     url = src.get("url")
-    if url and page is not None and src.get("type") == "internet_archive" \
-            and page.get("source_leaf") is not None:
-        url = f"{url}/page/n{page['source_leaf']}"
+    # source_index is the page's position at IA (/page/n<index>); issues fetched by
+    # paperpress 0.1 stored that position as source_leaf
+    index = page.get("source_index", page.get("source_leaf")) if page else None
+    if url and index is not None and src.get("type") == "internet_archive":
+        url = f"{url}/page/n{index}"
     return {"source": src.get("type"), "source_id": src.get("id"), "source_url": url,
             "source_file": src.get("path")}
 
@@ -124,6 +136,7 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
                 title = project.titles[rec["title"]]
                 key = d.name          # the date, date__source-id, or (undated) the source id
                 engine = full.get("ocr", {}).get("engine")
+                numbering = printed_pages(d, rec)
                 page_meta = {p["page"]: p for p in rec["pages"]}
                 issue_words = 0
                 for pg in full["pages"]:
@@ -135,8 +148,11 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
                         "title": title.slug, "title_name": title.name,
                         "date": rec["date"], "date_precision": rec.get("date_precision"),
                         "volume": rec.get("volume"), "number": rec.get("number"),
-                        "page": pg["page"], "pages_in_issue": len(full["pages"]),
-                        "words": words, "citation": citation(title.name, rec, pg["page"]),
+                        "page": pg["page"],
+                        "printed_page": numbering["pages"].get(pg["page"]),
+                        "pages_in_issue": len(full["pages"]),
+                        "words": words,
+                        "citation": citation(title.name, rec, printed(numbering, pg["page"])),
                         **_source_fields(rec, meta),
                         "image": str((d / meta["image"]).relative_to(project.root))
                                  if meta.get("image") else None,
@@ -149,7 +165,8 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
                                                                        encoding="utf-8")
                     n_pages += 1
                 n_words += issue_words
-                n_articles += _write_articles(d, rec, title, page_meta, aj, articles_csv)
+                n_articles += _write_articles(d, rec, title, page_meta, numbering, aj,
+                                              articles_csv)
                 issues_csv.writerow({
                     "title": title.slug, "title_name": title.name, "date": rec["date"],
                     "date_precision": rec.get("date_precision"), "volume": rec.get("volume"),
@@ -173,7 +190,8 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
             "skipped": [str(d.relative_to(project.root)) for d in skipped]}
 
 
-def _write_articles(d: Path, rec: dict, title, page_meta: dict, jl, writer) -> int:
+def _write_articles(d: Path, rec: dict, title, page_meta: dict, numbering: dict, jl,
+                    writer) -> int:
     """Write one issue's articles (from toc.json, if it has one). Returns the count."""
     from .enrich import article_text
 
@@ -197,14 +215,17 @@ def _write_articles(d: Path, rec: dict, title, page_meta: dict, jl, writer) -> i
             "section": a.get("section"), "language": a.get("language"),
             "is_advertisement": a.get("is_advertisement", False),
             "start_page": a["start_page"], "pages": a["pages"],
+            "printed_pages": [numbering["pages"][p] for p in a["pages"]]
+                             if numbering["pages"] else None,
             "continued": a.get("continued", False), "words": len(text.split()),
-            "citation": citation(title.name, rec, a["pages"],
+            "citation": citation(title.name, rec, printed(numbering, a["pages"]),
                                  None if a["title"].startswith("[") else a["title"]),
             "source_url": _source_fields(rec, page_meta.get(a["start_page"], {}))["source_url"],
             "enrich_model": toc.get("enrich", {}).get("model"), "text": text,
         }
         jl.write(json.dumps(row, ensure_ascii=False) + "\n")
-        writer.writerow({**row, "pages": " ".join(map(str, a["pages"]))})
+        writer.writerow({**row, "pages": " ".join(map(str, a["pages"])),
+                         "printed_pages": " ".join(map(str, row["printed_pages"] or []))})
         n += 1
     return n
 
@@ -230,6 +251,9 @@ Exported {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC by paperpress {__versio
 
 Columns
   id              title_date_pNN, unique per page
+  page            the page's position in the issue (1 = first scan)
+  printed_page    the page number printed on the page, when it could be read from
+                  the page itself (folios) or the source; citations use it
   date            YYYY-MM-DD (date_precision "month" means the day is unknown)
   citation        a ready-to-use reference, e.g. "Title, March 4, 1960, p. 1"
   source_url      the page at its source (Internet Archive), if online
