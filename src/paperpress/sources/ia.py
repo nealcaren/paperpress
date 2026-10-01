@@ -153,8 +153,8 @@ def target_width(page: Page, native_ppi: int | None, ppi: int | None,
     return round(page.width * scale)
 
 
-def _fetch_image(page: Page, width: int) -> tuple[bytes, int]:
-    """Download one page image at `width`, returning (jpeg bytes, actual width).
+def _fetch_image(page: Page, width: int) -> tuple[bytes, int, str]:
+    """Download one page image at `width`: (jpeg bytes, actual width, IIIF size used).
 
     IA's image server (Cantaloupe) fails with HTTP 500 on some exact
     page/width combinations, deterministically, while neighbouring widths
@@ -169,7 +169,7 @@ def _fetch_image(page: Page, width: int) -> tuple[bytes, int]:
         size = "max" if w == page.width else f"{w},"
         try:
             return _get(f"{page.service}/full/{size}/0/default.jpg",
-                        retry_statuses=(429, 502, 503, 504)), w
+                        retry_statuses=(429, 502, 503, 504)), w, size
         except IAError as e:
             if "HTTP 500" not in str(e):
                 raise
@@ -183,12 +183,14 @@ def _download_pages(tmp: Path, pages: list[Page], *, native_ppi, ppi, max_width,
         n, p = n_page
         w = target_width(p, native_ppi, ppi, max_width)
         name = f"{page_name(n)}.jpg"
-        data, w = _fetch_image(p, w)
+        data, w, size = _fetch_image(p, w)
         (tmp / "images" / name).write_bytes(data)
         return {"page": n, "image": f"images/{name}",
                 "width": w, "height": round(p.height * w / p.width),
                 "ppi": round(native_ppi * w / p.width) if native_ppi else None,
-                "source_index": p.index, "source_leaf": p.leaf, "iiif_service": p.service}
+                "source_index": p.index, "source_leaf": p.leaf, "iiif_service": p.service,
+                # the exact request that worked: IA's server fails on some sizes
+                "iiif_size": size}
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(one, enumerate(pages, start=1)))
@@ -271,6 +273,7 @@ def fetch_issue(project: Project, title_slug: str, identifier: str, *,
 def refresh_issue(issue_dir: Path) -> None:
     """Update an already-fetched issue's page and rights metadata from IA without
     downloading the images again (for issues fetched by older versions)."""
+    # (iiif_size can't be recovered here; `paperpress build --images ia` probes for it)
     from ..project import read_issue
 
     rec = read_issue(issue_dir)
@@ -288,3 +291,18 @@ def refresh_issue(issue_dir: Path) -> None:
     rec["source"]["rights"] = fresh["source"]["rights"]
     rec["source"]["publisher"] = fresh["source"]["publisher"]
     write_issue(issue_dir, rec)
+
+
+def working_size(page: dict) -> str | None:
+    """A IIIF size that IA's image server serves for this page: the recorded one, or
+    found by trying the stored width, then "max". None if neither works."""
+    if page.get("iiif_size"):
+        return page["iiif_size"]
+    for size in (f"{page['width']},", "max"):     # our OCR image size first
+        try:
+            _get(f"{page['iiif_service']}/full/{size}/0/default.jpg", retries=1,
+                 retry_statuses=(429, 502, 503, 504))
+            return size
+        except IAError:
+            continue
+    return None

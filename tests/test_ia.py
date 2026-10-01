@@ -133,6 +133,7 @@ def test_image_server_500_tries_a_neighbouring_width(project, fake_ia, monkeypat
     _, dest = ia.fetch_issue(project, "revolution", "r")
     assert read_issue(dest)["pages"][0]["width"] == 1999
     assert any(u.endswith("/full/1999,/0/default.jpg") for u in fake_ia["calls"])
+    assert read_issue(dest)["pages"][0]["iiif_size"] == "1999,"
 
 
 def test_manifest_leaf_labels_and_page_numbers():

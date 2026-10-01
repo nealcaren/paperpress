@@ -94,7 +94,7 @@ def test_pages_render(server):
     _, _, title = get(server + "/t/wj/")
     assert b"1912" in title and b"1913" in title and b"Undated" in title
     _, _, issue = get(server + "/t/wj/1912-02-03/")
-    assert b"February 3, 1912" in issue and b"/t/wj/1912-02-03/p/2" in issue
+    assert b"February 3, 1912" in issue and b"/t/wj/1912-02-03/p/2/" in issue
     _, _, reader = get(server + "/t/wj/1912-02-03/p/1?q=boston")
     assert b"<mark>Boston</mark>" in reader and b'class="r lab-plain_text hit"' in reader
     assert b"Page 1 of 2" in reader and b'rel="next"' in reader
@@ -105,7 +105,7 @@ def test_pages_render(server):
 def test_search_page(server):
     _, _, body = get(server + "/search?q=voting&sort=oldest")
     assert b"2 pages match" in body
-    assert b"/t/wj/1912-02-03/p/1?q=voting" in body
+    assert b"/t/wj/1912-02-03/p/1/?q=voting" in body
 
 
 def test_images_and_thumbnails(server, project):
@@ -143,7 +143,7 @@ def test_issue_contents_and_region_link(server, project):
          "start_page": 2, "pages": [2], "regions": [{"page": 2, "ids": ["r0"]}]}]}))
     _, _, issue = get(server + "/t/wj/1912-02-03/")
     assert b"<h2>Contents</h2>" in issue and b"Suffragists March" in issue
-    assert b'href="/t/wj/1912-02-03/p/2?r=r1"' in issue and b"A. Writer" in issue
+    assert b'href="/t/wj/1912-02-03/p/2/?r=r1"' in issue and b"A. Writer" in issue
     assert b"1 advertisement<" in issue and b">Masthead<" not in issue
-    _, _, reader = get(server + "/t/wj/1912-02-03/p/2?r=r1")
+    _, _, reader = get(server + "/t/wj/1912-02-03/p/2/?r=r1")
     assert b'data-select="r1"' in reader

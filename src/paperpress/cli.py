@@ -377,6 +377,39 @@ def export_cmd(titles, out, txt):
 
 
 @main.command()
+@click.option("--out", type=click.Path(file_okay=False, path_type=Path),
+              help="Folder to write (default: site/ in the project).")
+@click.option("--base", default="/", show_default=True,
+              help="URL path the site will live under, e.g. /suffrage-press/ for a GitHub "
+                   "Pages project site.")
+@click.option("--images", type=click.Choice(["copy", "ia"]), default="copy", show_default=True,
+              help="copy: put resized scans in the site. ia: show Internet Archive pages "
+                   "from IA's image server (smaller site, depends on IA).")
+@click.option("--image-width", type=int, default=2000, show_default=True,
+              help="Width of copied page images, in pixels.")
+def build(out, base, images, image_width):
+    """Write the archive as a static website (search included) for any web host.
+
+    The result is a folder of plain files: put it on GitHub Pages, Netlify, or
+    any web server. Only what you've added is published, so check you have the
+    right to share the scans first.
+    """
+    from .build import BuildError, build as build_site
+
+    project = _project()
+    dest = (out or project.root / "site").resolve()
+    try:
+        s = build_site(project, dest, base=base, images=images, image_width=image_width,
+                       log=click.echo)
+    except BuildError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"built {s['issues']} issues, {s['pages']} pages "
+               f"({s['bytes'] / 1e6:.0f} MB) -> {dest}")
+    click.echo(f"preview: python -m http.server -d {dest} 8001   then open "
+               f"http://127.0.0.1:8001{base if base.startswith('/') else '/' + base}")
+
+
+@main.command()
 @click.option("--port", type=int, default=8000, show_default=True,
               help="Port to listen on (the next free one is used if it's taken).")
 @click.option("--no-open", is_flag=True, help="Don't open a browser window.")

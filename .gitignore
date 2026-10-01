@@ -9,3 +9,5 @@ examples/*/ocr_run.log
 examples/*/export/
 .paperpress/
 examples/*/.paperpress/
+site/
+examples/*/site/

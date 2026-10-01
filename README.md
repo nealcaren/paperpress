@@ -10,7 +10,7 @@ generalizes the pipeline built for [The Negro World Archive](https://negroworlda
 
 > **Status: early.** Working so far: the project format, bringing in issues from the
 > Internet Archive or your own PDFs, OCR, an optional LLM table of contents, export,
-> a local reading/search site, and `status`.
+> a local reading/search site, a static public site, and `status`.
 
 ## Pipeline
 
@@ -22,7 +22,7 @@ generalizes the pipeline built for [The Negro World Archive](https://negroworlda
 | Table of contents (LLM, **optional**) | `paperpress enrich` | working (`profile` drafting planned) |
 | Browse and search on your own machine | `paperpress serve` | working |
 | Text corpus for research | `paperpress export` | working |
-| Public static site with search | `paperpress build` | planned |
+| Public static site with search | `paperpress build` | working |
 
 The archive's text always comes from paperpress's own OCR. Any OCR that came with
 the source (IA's text, a PDF's text layer) is kept in `source/` only as a baseline
@@ -181,6 +181,30 @@ English stemming is on, so `voting` also finds "vote". You can filter by title a
 date and sort by relevance or date. A result opens the page with the hits highlighted
 and scrolled into view. The search index (`.paperpress/search.db`) updates itself
 when you OCR more issues.
+
+## Publish a website
+
+```bash
+paperpress build                                   # writes site/
+paperpress build --base /suffrage-press/           # for https://you.github.io/suffrage-press/
+paperpress build --images ia                       # show IA scans from IA (much smaller)
+```
+
+This writes the archive as a folder of plain files that any web host can serve
+(GitHub Pages, Netlify, a department web server). It has the same pages as `serve`:
+titles, issues, contents, and the reader with region boxes. Search runs in the
+visitor's browser using [Pagefind](https://pagefind.app), with title and year filters
+and date sorting, and results open the page with the matches highlighted. Preview it
+with `python -m http.server -d site 8001`.
+
+By default the page scans are copied into the site, resized to 2,000 px wide (about
+1 MB a page), so the site depends on nothing else. GitHub Pages allows about 1 GB,
+which is roughly 1,000 pages. For bigger runs from the Internet Archive, `--images ia`
+shows each scan from IA's image server instead: the sample's site drops from 79 MB to
+9 MB. Pages that IA's server won't serve are copied in anyway.
+
+Publishing makes the scans and text public, so check that you have the right to
+share them.
 
 ## Your own PDFs
 

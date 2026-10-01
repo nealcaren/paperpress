@@ -52,12 +52,21 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   cache keyed by a signature of every `full_text.json` (size+mtime), so `ensure_index()`
   rebuilds when OCR changes. `fts_query()` quotes every user term, so FTS syntax can't
   break a query.
-- `serve.py` is the standard-library `ThreadingHTTPServer` on 127.0.0.1. HTML, CSS and JS
-  are inline strings. URLs are resolved through the `Catalog` (never joined onto disk
-  paths), so traversal can't escape the project. Thumbnails are cached in
-  `.paperpress/thumbs/`. The reader overlays region boxes as SVG over the scan; the
-  `?q=` highlighting is a prefix approximation of FTS5 stemming. The server keeps its
-  code in memory, so restart `serve` after editing it.
+- `site.py` renders every page (HTML, CSS and JS as inline strings) for both sites. A
+  `Catalog` holds the differences: `base` path, `static` (Pagefind vs SQLite search), and
+  the image and thumbnail URL functions. Reader URLs are directory-style (`t/<slug>/<issue>/p/<n>/`).
+  Pagefind attributes (`data-pagefind-body/meta/filter/sort`) sit on the reader's text
+  pane. `?q=` highlighting happens server-side in serve and in app.js on the static site,
+  both as the same prefix approximation of stemming.
+- `serve.py` is the standard-library `ThreadingHTTPServer` on 127.0.0.1: routing,
+  `/img/` and `/thumb/` (thumbnails cached in `.paperpress/thumbs/`). URLs are resolved
+  through the `Catalog`, never joined onto disk paths. The server keeps its code in memory,
+  so restart `serve` after editing it.
+- `build.py` is the static site: it copies resized scans (`--images copy`) or links IA's IIIF
+  server (`--images ia`, using each page's recorded `iiif_size`, probing and saving it via
+  `ia.working_size` for older issues and falling back to copying), writes `.nojekyll` (GitHub
+  Pages drops `_undated/` otherwise), then runs `python -m pagefind` from the `pagefind[bin]`
+  dependency. It's built in `site.partial` and swapped in.
 - `enrich.py` is the optional LLM table of contents, ported from Negro World's
   `analyze_issue.py --per-page`: one call per page groups region ids (`r0`...) into
   articles, then a stitch call links cross-page continuations, kept conservative (merges
@@ -78,7 +87,7 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
 - IA page records carry `source_index` (position at IA, used for `/page/n<index>` links) and
   `source_leaf` (scan leaf, from the canvas label, which `page_numbers.json` keys on). Issues
   fetched by 0.1 stored the position as `source_leaf`; `paperpress refresh` repairs them.
-- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | refresh | ocr | enrich | export | serve | status`).
+- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | refresh | ocr | enrich | export | serve | build | status`).
 - Source OCR (IA djvu text, PDF text layers) is a comparison baseline only. The archive's text
   will come from the `ocr` stage (newspaper-ocr, with reading order). LLM TOC enrichment
   (`profile`/`enrich`, ported from Negro World) is planned and optional, so nothing
