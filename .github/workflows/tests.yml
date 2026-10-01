@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install
+        # CPU-only PyTorch: the tests never run the OCR models, and the default
+        # Linux wheels pull in gigabytes of CUDA
+        run: |
+          uv venv -p ${{ matrix.python }}
+          uv pip install -e '.[dev]' --index-strategy unsafe-best-match \
+            --extra-index-url https://download.pytorch.org/whl/cpu
+      - name: Test
+        run: .venv/bin/pytest -q
