@@ -9,7 +9,8 @@ issues by title and date, keeps provenance, and runs the issue-level stages. It
 generalizes the pipeline built for [The Negro World Archive](https://negroworldarchive.org).
 
 > **Status: early.** Working so far: the project format, bringing in issues from the
-> Internet Archive or your own PDFs, OCR, export, a local reading/search site, and `status`.
+> Internet Archive or your own PDFs, OCR, an optional LLM table of contents, export,
+> a local reading/search site, and `status`.
 
 ## Pipeline
 
@@ -18,7 +19,7 @@ generalizes the pipeline built for [The Negro World Archive](https://negroworlda
 | Bring in issues | `paperpress add ia` / `paperpress add pdf` | working |
 | OCR, with newspaper reading order | `paperpress ocr` (via newspaper-ocr) | working |
 | Remove duplicate page scans | `paperpress dedup` | planned |
-| Table of contents (LLM, **optional**) | `paperpress profile`, `paperpress enrich` | planned |
+| Table of contents (LLM, **optional**) | `paperpress enrich` | working (`profile` drafting planned) |
 | Browse and search on your own machine | `paperpress serve` | working |
 | Text corpus for research | `paperpress export` | working |
 | Public static site with search | `paperpress build` | planned |
@@ -97,6 +98,41 @@ unchanged: regions in reading order with boxes, labels, text and status. It also
 a `full_text.json` with the issue's text page by page, with hyphenated line breaks
 rejoined. Finished pages are skipped, so stopping and re-running picks up where it
 left off.
+
+## Table of contents (optional)
+
+```bash
+export OPENROUTER_API_KEY=...       # https://openrouter.ai/keys
+paperpress enrich [TITLES...] [--from DATE] [--to DATE] [--limit N] [--force]
+```
+
+An LLM reads each OCR'd page and groups its regions into articles: headline, author
+(only from a byline or signature, never guessed), type (news, editorial, letter,
+poem, advertisement, ...), section, and language. A second, small pass links stories
+continued on another page ("Continued on page 6"). The result is `toc.json` in each
+issue folder. Nothing else needs it. When it's there, the site shows a contents list
+for each issue that links straight to each article, and `export` adds
+`articles.jsonl`/`articles.csv` with each article's text and a citation like
+`"GAGGED AND BOUND," The Woman's Journal, vol. 43, no. 6, February 10, 1912, pp. 1, 6`.
+
+The defaults are `openai/gpt-5.6-luna` for the pages and `google/gemini-3.8-flash` for
+linking, chosen by a bake-off on *The Negro World*. They cost about 1–3 cents per issue;
+each run prints the actual cost. Any OpenAI-compatible endpoint works:
+
+```toml
+[enrich]
+model = "openai/gpt-5.6-luna"
+stitch_model = "google/gemini-3.8-flash"
+base_url = "https://openrouter.ai/api/v1"
+api_key_env = "OPENROUTER_API_KEY"
+```
+
+An optional `titles/<slug>/profile.json` tells the model about a paper: its regular
+sections and columns, contributors (with common OCR misspellings), organizations and
+languages. The keys are `sections`, `columns`, `contributors`
+(`{"name", "aka", "role", "era"}`), `organizations`, `ad_categories`, `languages`,
+`ocr_fixes` and `notes`. Each page's result is cached in `.paperpress/enrich/`, so
+re-running after an interruption doesn't pay twice.
 
 ## Export
 

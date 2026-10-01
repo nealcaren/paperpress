@@ -96,7 +96,7 @@ def test_pages_render(server):
     _, _, issue = get(server + "/t/wj/1912-02-03/")
     assert b"February 3, 1912" in issue and b"/t/wj/1912-02-03/p/2" in issue
     _, _, reader = get(server + "/t/wj/1912-02-03/p/1?q=boston")
-    assert b"<mark>Boston</mark>" in reader and b'class="r plain_text hit"' in reader
+    assert b"<mark>Boston</mark>" in reader and b'class="r lab-plain_text hit"' in reader
     assert b"Page 1 of 2" in reader and b'rel="next"' in reader
     _, _, undated = get(server + "/t/wj/_undated/mystery/p/1")
     assert b"Undated voting news." in undated
@@ -129,3 +129,21 @@ def test_undated_sorts_last(project):
     for sort in ("oldest", "newest"):
         _, hits = search.search(project, "voting", sort=sort)
         assert hits[-1].folder == "_undated/mystery"
+
+
+def test_issue_contents_and_region_link(server, project):
+    d = project.title_dir("wj") / "1912-02-03"
+    (d / "toc.json").write_text(json.dumps({"enrich": {"model": "m"}, "articles": [
+        {"id": "p1a1", "title": "Masthead", "type": "masthead", "is_advertisement": False,
+         "start_page": 1, "pages": [1], "regions": [{"page": 1, "ids": ["r0"]}]},
+        {"id": "p2a1", "title": "Suffragists March", "author": "A. Writer", "type": "news",
+         "is_advertisement": False, "start_page": 2, "pages": [2],
+         "regions": [{"page": 2, "ids": ["r1"]}]},
+        {"id": "p2a2", "title": "Hats", "type": "advertisement", "is_advertisement": True,
+         "start_page": 2, "pages": [2], "regions": [{"page": 2, "ids": ["r0"]}]}]}))
+    _, _, issue = get(server + "/t/wj/1912-02-03/")
+    assert b"<h2>Contents</h2>" in issue and b"Suffragists March" in issue
+    assert b'href="/t/wj/1912-02-03/p/2?r=r1"' in issue and b"A. Writer" in issue
+    assert b"1 advertisement<" in issue and b">Masthead<" not in issue
+    _, _, reader = get(server + "/t/wj/1912-02-03/p/2?r=r1")
+    assert b'data-select="r1"' in reader

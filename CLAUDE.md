@@ -58,7 +58,18 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   `.paperpress/thumbs/`. The reader overlays region boxes as SVG over the scan; the
   `?q=` highlighting is a prefix approximation of FTS5 stemming. The server keeps its
   code in memory, so restart `serve` after editing it.
-- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | ocr | export | serve | status`).
+- `enrich.py` is the optional LLM table of contents, ported from Negro World's
+  `analyze_issue.py --per-page`: one call per page groups region ids (`r0`...) into
+  articles, then a stitch call links cross-page continuations, kept conservative (merges
+  must cross pages). `clean_page_result` drops unknown or duplicate region ids. It writes
+  `toc.json` with `articles[].regions = [{page, ids}]`, and `article_text()` rebuilds an
+  article's text from the page JSON. Per-page results are cached in
+  `.paperpress/enrich/<slug>/<issue>/`, keyed by model. The LLM is an injectable callable
+  `(prompt, model, temperature) -> str`; the tests use a fake. `profile_block` also reads
+  Negro World's profile keys.
+- Region labels become CSS classes in the reader with a `lab-` prefix. DocLayout has a
+  label called `text`, which once collided with the page's own `.text` pane.
+- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | ocr | enrich | export | serve | status`).
 - Source OCR (IA djvu text, PDF text layers) is a comparison baseline only. The archive's text
   will come from the `ocr` stage (newspaper-ocr, with reading order). LLM TOC enrichment
   (`profile`/`enrich`, ported from Negro World) is planned and optional, so nothing

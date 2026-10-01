@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from paperpress.export import citation, export, human_date
+from paperpress.export import citation, export, human_date, page_span
 from paperpress.project import Project, init_project, write_issue
 
 
@@ -87,3 +87,10 @@ def test_reexport_replaces_and_failure_leaves_old(project, tmp_path, monkeypatch
     with pytest.raises(ZeroDivisionError):
         export(project, ["wj"], dest)
     assert (dest / "pages.jsonl").exists() and not dest.with_name("export.partial").exists()
+
+
+def test_page_span():
+    assert page_span(3) == "p. 3" and page_span([3]) == "p. 3"
+    assert page_span([5, 6, 7]) == "pp. 5–7"
+    assert page_span([1, 6]) == "pp. 1, 6"
+    assert page_span([6, 1, 2, 9, 10]) == "pp. 1–2, 6, 9–10"

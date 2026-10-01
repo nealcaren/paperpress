@@ -247,6 +247,79 @@ def ocr(titles, date_from, date_to, limit, force):
         raise click.ClickException(f"{len(failed)} issue(s) failed; re-run to retry")
 
 
+@main.command()
+@click.argument("titles", nargs=-1)
+@click.option("--from", "date_from", help="Only issues on or after this date (YYYY-MM-DD).")
+@click.option("--to", "date_to", help="Only issues on or before this date (YYYY-MM-DD).")
+@click.option("--limit", type=int, help="Enrich at most this many issues this run.")
+@click.option("--model", help="Model for the per-page pass (overrides paper.toml).")
+@click.option("--stitch-model", help="Model for linking continued stories (overrides paper.toml).")
+@click.option("--force", is_flag=True, help="Redo issues (and pages) already enriched.")
+def enrich(titles, date_from, date_to, limit, model, stitch_model, force):
+    """Optional: build each issue's table of contents with an LLM.
+
+    Groups each page's OCR regions into articles (headline, author, type,
+    section, language, ad or not) and links stories continued on other pages.
+    Needs an API key (OPENROUTER_API_KEY by default) and costs money: roughly
+    a few cents per issue with the default models. Issues must be OCR'd first.
+    """
+    from . import enrich as en
+
+    project = _project()
+    try:
+        slugs = [project.title(t).slug for t in titles] or list(project.titles)
+    except ProjectError as e:
+        raise click.ClickException(str(e))
+    settings = {**en.DEFAULT_ENRICH, **project.enrich}
+    if model:
+        settings["model"] = model
+    if stitch_model:
+        settings["stitch_model"] = stitch_model
+    todo, not_ocrd = [], 0
+    for slug in slugs:
+        for d in project.issue_dirs(slug, include_undated=True):
+            date = DATE_DIR.match(d.name)
+            if (date_from or date_to) and not date:
+                continue
+            if date and ((date_from and date[1] < date_from) or (date_to and date[1] > date_to)):
+                continue
+            if not (d / "full_text.json").exists():
+                not_ocrd += 1
+            elif force or not en.is_done(d):
+                todo.append(d)
+    if limit:
+        todo = todo[:limit]
+    if not_ocrd:
+        click.echo(f"skipping {not_ocrd} issue(s) not OCR'd yet")
+    if not todo:
+        click.echo("nothing to enrich (every OCR'd issue has a toc.json; --force to redo)")
+        return
+    try:
+        llm = en.make_llm(settings)
+    except en.EnrichError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"enrich: {len(todo)} issue(s) with {settings['model']} "
+               f"(stitch: {settings['stitch_model']})")
+    failed = []
+    for n, d in enumerate(todo, start=1):
+        rel = d.relative_to(project.root / "titles")
+        before = llm.cost
+        try:
+            s = en.enrich_issue(project, d, llm, settings, force=force)
+        except (en.EnrichError, OSError, ValueError) as e:
+            failed.append(d)
+            click.echo(f"[{n}/{len(todo)}] FAILED {rel}: {e}", err=True)
+            continue
+        cost = f", ${llm.cost - before:.3f}" if llm.cost else ""
+        click.echo(f"[{n}/{len(todo)}] {rel}: {s['toc']} articles, {s['ads']} ads, "
+                   f"{s['continued']} continued{cost}")
+    if llm.cost:
+        click.echo(f"total cost ${llm.cost:.2f} ({llm.tokens:,} tokens)")
+    if failed:
+        raise click.ClickException(f"{len(failed)} issue(s) failed; re-run to retry "
+                                   f"(finished pages are cached)")
+
+
 @main.command("export")
 @click.argument("titles", nargs=-1)
 @click.option("--out", type=click.Path(file_okay=False, path_type=Path),
@@ -326,8 +399,9 @@ def status():
         dates = Counter(DATE_DIR.match(d.name).group(1) for d in dated)
         span = f"{min(dates)} to {max(dates)}" if dates else "no dated issues"
         ocrd = sum(1 for d in dirs if (d / "full_text.json").exists())
+        tocs = sum(1 for d in dirs if (d / "toc.json").exists())
         click.echo(f"{t.name} ({slug}): {len(dirs)} issues, {pages} pages, {span}; "
-                   f"OCR'd {ocrd}/{len(dirs)}")
+                   f"OCR'd {ocrd}/{len(dirs)}" + (f", enriched {tocs}" if tocs else ""))
         if undated:
             click.echo(f"  {len(undated)} undated: " + ", ".join(d.name for d in undated))
         dup = [d for d, c in dates.items() if c > 1]

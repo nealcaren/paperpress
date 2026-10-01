@@ -7,6 +7,10 @@ Writes into one folder (default <project>/export/):
                   Excel opens it correctly; Excel cuts cells at 32,767
                   characters, and a dense newspaper page can be longer)
     issues.csv    one row per issue, no text: a manifest of the corpus
+    articles.jsonl / articles.csv
+                  one record per article, for issues with a table of contents
+                  (`paperpress enrich`); mastheads are left out, ads are kept
+                  and flagged
     txt/          with txt=True: <title>_<date>_pNN.txt, one file per page
     README.txt    what's in the folder and where it came from
 
@@ -27,6 +31,10 @@ from .project import Project, read_issue
 PAGE_FIELDS = ["id", "title", "title_name", "date", "date_precision", "volume", "number",
                "page", "pages_in_issue", "words", "citation", "source", "source_id",
                "source_url", "source_file", "image", "ocr_engine", "text"]
+ARTICLE_FIELDS = ["id", "title", "title_name", "date", "date_precision", "volume", "number",
+                  "headline", "author", "author_confidence", "type", "section", "language",
+                  "is_advertisement", "start_page", "pages", "continued", "words", "citation",
+                  "source_url", "enrich_model", "text"]
 ISSUE_FIELDS = ["title", "title_name", "date", "date_precision", "volume", "number", "pages",
                 "words", "source", "source_id", "source_url", "source_file", "rights",
                 "folder", "ocr_engine"]
@@ -39,15 +47,31 @@ def human_date(iso: str | None, precision: str | None) -> str | None:
     return f"{d:%B} {d.year}" if precision == "month" else f"{d:%B} {d.day}, {d.year}"
 
 
-def citation(title_name: str, rec: dict, page: int) -> str:
-    """A footnote-ready reference, e.g. "The Woman's Journal, February 3, 1912, p. 2"."""
-    parts = [title_name]
+def page_span(pages: int | list[int]) -> str:
+    """"p. 3", "pp. 5–7" for consecutive pages, "pp. 1, 6" for a story that jumps."""
+    pages = sorted(set(pages)) if isinstance(pages, list) else [pages]
+    if len(pages) == 1:
+        return f"p. {pages[0]}"
+    runs = [[pages[0], pages[0]]]               # [first, last] of each consecutive run
+    for p in pages[1:]:
+        if p == runs[-1][1] + 1:
+            runs[-1][1] = p
+        else:
+            runs.append([p, p])
+    return "pp. " + ", ".join(str(a) if a == b else f"{a}–{b}" for a, b in runs)
+
+
+def citation(title_name: str, rec: dict, page: int | list[int],
+             headline: str | None = None) -> str:
+    """A footnote-ready reference, e.g. "The Woman's Journal, February 3, 1912, p. 2",
+    or for an article '"Headline," The Suffragist, ..., pp. 5–7'."""
+    parts = [f'"{headline.rstrip(".,")},"' if headline else None, title_name]
     when = human_date(rec.get("date"), rec.get("date_precision"))
     if rec.get("volume"):
         parts.append(f"vol. {rec['volume']}" + (f", no. {rec['number']}" if rec.get("number")
                                                   else ""))
     parts.append(when or "undated")
-    return ", ".join(parts) + f", p. {page}"
+    return (parts[0] + " " if parts[0] else "") + ", ".join(parts[1:]) + f", {page_span(page)}"
 
 
 def _source_fields(rec: dict, page: dict | None = None) -> dict:
@@ -81,17 +105,21 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
     if tmp.exists():
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True)
-    n_pages = n_words = 0
+    n_pages = n_words = n_articles = 0
     try:
         if txt:
             (tmp / "txt").mkdir()
         with (tmp / "pages.jsonl").open("w", encoding="utf-8") as jl, \
              (tmp / "pages.csv").open("w", encoding="utf-8-sig", newline="") as pc, \
-             (tmp / "issues.csv").open("w", encoding="utf-8-sig", newline="") as ic:
+             (tmp / "issues.csv").open("w", encoding="utf-8-sig", newline="") as ic, \
+             (tmp / "articles.jsonl").open("w", encoding="utf-8") as aj, \
+             (tmp / "articles.csv").open("w", encoding="utf-8-sig", newline="") as ac:
             pages_csv = csv.DictWriter(pc, PAGE_FIELDS)
             issues_csv = csv.DictWriter(ic, ISSUE_FIELDS)
+            articles_csv = csv.DictWriter(ac, ARTICLE_FIELDS)
             pages_csv.writeheader()
             issues_csv.writeheader()
+            articles_csv.writeheader()
             for d, rec, full in issues:
                 title = project.titles[rec["title"]]
                 key = d.name          # the date, date__source-id, or (undated) the source id
@@ -121,6 +149,7 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
                                                                        encoding="utf-8")
                     n_pages += 1
                 n_words += issue_words
+                n_articles += _write_articles(d, rec, title, page_meta, aj, articles_csv)
                 issues_csv.writerow({
                     "title": title.slug, "title_name": title.name, "date": rec["date"],
                     "date_precision": rec.get("date_precision"), "volume": rec.get("volume"),
@@ -129,30 +158,75 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
                     "rights": rec.get("source", {}).get("rights"),
                     "folder": str(d.relative_to(project.root)), "ocr_engine": engine,
                 })
+        if not n_articles:
+            (tmp / "articles.jsonl").unlink()
+            (tmp / "articles.csv").unlink()
         (tmp / "README.txt").write_text(_readme(project, slugs, len(issues), n_pages, n_words,
-                                                txt))
+                                                txt, n_articles))
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     if dest.exists():
         shutil.rmtree(dest)
     tmp.rename(dest)
-    return {"issues": len(issues), "pages": n_pages, "words": n_words,
+    return {"issues": len(issues), "pages": n_pages, "words": n_words, "articles": n_articles,
             "skipped": [str(d.relative_to(project.root)) for d in skipped]}
 
 
-def _readme(project: Project, slugs, n_issues, n_pages, n_words, txt) -> str:
+def _write_articles(d: Path, rec: dict, title, page_meta: dict, jl, writer) -> int:
+    """Write one issue's articles (from toc.json, if it has one). Returns the count."""
+    from .enrich import article_text
+
+    toc_file = d / "toc.json"
+    if not toc_file.exists():
+        return 0
+    toc = json.loads(toc_file.read_text())
+    cache: dict = {}
+    n = 0
+    for a in toc.get("articles", []):
+        if a.get("type") == "masthead":
+            continue
+        text = article_text(d, a, cache)
+        row = {
+            "id": f"{title.slug}_{d.name.replace('/', '_')}_{a['id']}",
+            "title": title.slug, "title_name": title.name,
+            "date": rec["date"], "date_precision": rec.get("date_precision"),
+            "volume": rec.get("volume"), "number": rec.get("number"),
+            "headline": a["title"], "author": a.get("author"),
+            "author_confidence": a.get("author_confidence"), "type": a.get("type"),
+            "section": a.get("section"), "language": a.get("language"),
+            "is_advertisement": a.get("is_advertisement", False),
+            "start_page": a["start_page"], "pages": a["pages"],
+            "continued": a.get("continued", False), "words": len(text.split()),
+            "citation": citation(title.name, rec, a["pages"],
+                                 None if a["title"].startswith("[") else a["title"]),
+            "source_url": _source_fields(rec, page_meta.get(a["start_page"], {}))["source_url"],
+            "enrich_model": toc.get("enrich", {}).get("model"), "text": text,
+        }
+        jl.write(json.dumps(row, ensure_ascii=False) + "\n")
+        writer.writerow({**row, "pages": " ".join(map(str, a["pages"]))})
+        n += 1
+    return n
+
+
+def _readme(project: Project, slugs, n_issues, n_pages, n_words, txt, n_articles=0) -> str:
     titles = "\n".join(f"  {project.titles[s].name} ({s})" for s in slugs)
+    files = ["pages.jsonl   one JSON record per page (same columns as pages.csv)",
+             "pages.csv     one row per page; `text` is the page's OCR in reading order",
+             "issues.csv    one row per issue, without text"]
+    if n_articles:
+        files.append(f"articles.jsonl, articles.csv   {n_articles:,} articles from the LLM table "
+                     f"of contents\n              (paperpress enrich): headline, author, type, "
+                     f"section, text.\n              Headlines and authors are machine-read too.")
+    if txt:
+        files.append("txt/          one plain-text file per page, named by the `id` column")
     return f"""{project.name}: text corpus
 Exported {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC by paperpress {__version__}
 
 {n_issues} issues, {n_pages} pages, {n_words:,} words from:
 {titles}
 
-pages.jsonl   one JSON record per page (same columns as pages.csv)
-pages.csv     one row per page; `text` is the page's OCR in reading order
-issues.csv    one row per issue, without text
-{"txt/          one plain-text file per page, named by the `id` column" if txt else ""}
+""" + "\n".join(files) + """
 
 Columns
   id              title_date_pNN, unique per page

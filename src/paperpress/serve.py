@@ -29,7 +29,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .export import citation, human_date
+from .export import citation, human_date, page_span
 from .ocr import NO_TEXT_STATUSES, region_text
 from .project import Project, page_name, read_issue
 from . import search as search_mod
@@ -167,13 +167,42 @@ def page_issue(cat: Catalog, issue: Issue) -> str:
                     for pg in issue.rec["pages"])
     note = "" if issue.ocrd else ('<p class="note">Not OCR’d yet. Run '
                                   '<code>paperpress ocr</code> to make it searchable.</p>')
+    contents = _contents(issue)
     body = f"""<h1>{e(t.name)}</h1>
       <p class="issue-meta">{e(issue.label)}{f" · {e(issue.volno)}" if issue.volno else ""}
       · {len(issue.rec['pages'])} pages</p>
-      <p class="meta">Source: {_source_link(issue.rec)}</p>{note}
-      <div class="grid pages">{pages}</div>"""
+      <p class="meta">Source: {_source_link(issue.rec)}</p>{note}{contents}
+      <h2>Pages</h2><div class="grid pages">{pages}</div>"""
     return layout(p, f"{t.name}, {issue.label}", body,
                   crumbs=[(t.name, f"/t/{issue.slug}/"), (issue.label, None)])
+
+
+def _contents(issue: Issue) -> str:
+    """The issue's table of contents from toc.json (paperpress enrich), if any."""
+    from .enrich import toc_entries
+
+    f = issue.dir / "toc.json"
+    if not f.exists():
+        return ""
+    toc = json.loads(f.read_text())
+
+    def entry(a):
+        first = a["regions"][0]
+        href = f"{issue.url}p/{first['page']}?r={urllib.parse.quote(first['ids'][0])}"
+        where = page_span(a["pages"])
+        by = f' <span class="by">{e(a["author"])}</span>' if a.get("author") else ""
+        kind = a.get("section") or (a["type"] if a["type"] not in ("news", "other") else "")
+        return (f'<li><a href="{href}">{e(a["title"])}</a>{by}'
+                f'<span class="meta"> {e(kind)} · {where}</span></li>')
+
+    items = "".join(entry(a) for a in toc_entries(toc))
+    ads = [a for a in toc.get("articles", []) if a.get("is_advertisement")]
+    ad_list = (f'<details><summary>{len(ads)} advertisement{"s" if len(ads) != 1 else ""}</summary><ul class="toc">'
+               f'{"".join(entry(a) for a in ads)}</ul></details>' if ads else "")
+    model = toc.get("enrich", {}).get("model", "an LLM")
+    return (f'<h2>Contents</h2><ul class="toc">{items}</ul>{ad_list}'
+            f'<p class="meta small">Contents drafted by {e(model)} from the OCR; '
+            f'headlines and authors may contain errors.</p>')
 
 
 def _highlighter(q: str):
@@ -189,7 +218,7 @@ def _highlighter(q: str):
     return re.compile(r"\b(?:" + "|".join(words) + r")\w*", re.IGNORECASE)
 
 
-def page_reader(cat: Catalog, issue: Issue, n: int, q: str) -> str:
+def page_reader(cat: Catalog, issue: Issue, n: int, q: str, select: str = "") -> str:
     p, t = cat.project, cat.project.titles[issue.slug]
     meta = next(pg for pg in issue.rec["pages"] if pg["page"] == n)
     total = len(issue.rec["pages"])
@@ -207,7 +236,9 @@ def page_reader(cat: Catalog, issue: Issue, n: int, q: str) -> str:
             if rx:
                 body = rx.sub(lambda m: f"<mark>{m.group(0)}</mark>", body)
             b = r["bbox"]
-            cls = f"r {e(r.get('label', ''))}{' hit' if hit else ''}"
+            # labels are prefixed: DocLayout has a label called "text", which as a bare
+            # class would collide with the page's own class names
+            cls = f"r lab-{e(r.get('label', ''))}{' hit' if hit else ''}"
             regions_svg.append(f'<rect class="{cls}" data-r="{e(r["id"])}" x="{b["x0"]}" '
                                f'y="{b["y0"]}" width="{b["x1"] - b["x0"]}" '
                                f'height="{b["y1"] - b["y0"]}"></rect>')
@@ -228,7 +259,7 @@ def page_reader(cat: Catalog, issue: Issue, n: int, q: str) -> str:
         if n < total else '<span></span>'
     img = f"/img/{issue.slug}/{urllib.parse.quote(issue.key)}/{n}"
     cite = citation(t.name, issue.rec, n)
-    body = f"""<div class="reader" data-w="{w}" data-h="{h}">
+    body = f"""<div class="reader" data-w="{w}" data-h="{h}" data-select="{e(select)}">
   <section class="viewer">
     <div class="tools">
       <button type="button" data-zoom="-1" aria-label="Zoom out">−</button>
@@ -242,7 +273,7 @@ def page_reader(cat: Catalog, issue: Issue, n: int, q: str) -> str:
       <svg viewBox="0 0 {w} {h}" preserveAspectRatio="none">{''.join(regions_svg)}</svg>
     </div></div>
   </section>
-  <aside class="text">
+  <aside class="textpane">
     <p class="cite">{e(cite)} <button type="button" class="copy" data-copy="{e(cite)}">Copy
       citation</button></p>
     {text_pane}
@@ -333,6 +364,8 @@ border-radius:8px;padding:10px;color:inherit;text-decoration:none}.card:hover{bo
 .filters{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 16px}.filters input[type=search]{flex:1 1 280px}
 .hits li{margin:0 0 18px}.snippet{margin:4px 0 0;color:var(--muted)}mark{background:var(--mark);color:inherit}
 .more a{margin-right:16px}
+.toc{list-style:none;padding:0;columns:2 380px;column-gap:32px}.toc li{break-inside:avoid;margin:0 0 8px}
+.toc .by{font-style:italic}.small{font-size:.85rem}details{margin:8px 0}
 .reader{display:grid;grid-template-columns:minmax(0,3fr) minmax(320px,2fr);gap:16px;height:calc(100vh - 90px)}
 .viewer{display:flex;flex-direction:column;min-height:0}
 .tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-bottom:8px}
@@ -344,15 +377,15 @@ rect.r{fill:transparent;stroke:var(--box);stroke-width:3;vector-effect:non-scali
 rect.r:hover{fill:var(--boxfill)}rect.r.hit{fill:rgba(255,200,0,.18)}
 rect.r.sel{stroke:var(--sel);stroke-width:3;fill:rgba(30,110,200,.12)}
 .noboxes rect.r:not(.sel){stroke:transparent}
-.text{position:relative;overflow:auto;padding:0 8px 24px;font-family:Georgia,serif;font-size:1.02rem;line-height:1.55}
-.text .cite{font-family:system-ui,sans-serif;font-size:.9rem;color:var(--muted)}
-.text .copy{font-size:.8rem;padding:2px 8px;margin-left:6px}
-.text p.r,.text h3.r{padding:4px 8px;margin:0 0 10px;border-left:3px solid transparent;cursor:pointer}
-.text h3.r{font-size:1.1rem}.text .r.sel{border-left-color:var(--sel);background:var(--card)}
-.text .abandon,.text .figure,.text .figure_caption{color:var(--muted);font-size:.92rem}
+.textpane{position:relative;overflow:auto;padding:0 8px 24px;font-family:Georgia,serif;font-size:1.02rem;line-height:1.55}
+.textpane .cite{font-family:system-ui,sans-serif;font-size:.9rem;color:var(--muted)}
+.textpane .copy{font-size:.8rem;padding:2px 8px;margin-left:6px}
+.textpane p.r,.textpane h3.r{padding:4px 8px;margin:0 0 10px;border-left:3px solid transparent;cursor:pointer}
+.textpane h3.r{font-size:1.1rem}.textpane .r.sel{border-left-color:var(--sel);background:var(--card)}
+.textpane .lab-abandon,.textpane .lab-figure,.textpane .lab-figure_caption{color:var(--muted);font-size:.92rem}
 .flag{font:.75rem system-ui;color:#fff;background:#a33;border-radius:3px;padding:0 4px;margin-left:6px}
 @media (max-width:820px){main{padding:12px 16px}.reader{grid-template-columns:1fr;height:auto}
-.scroller{height:70vh}.text{overflow:visible}.top{flex-wrap:wrap}.searchbox input{width:100%}}
+.scroller{height:70vh}.textpane{overflow:visible}.top{flex-wrap:wrap}.searchbox input{width:100%}}
 """
 
 JS = """
@@ -396,18 +429,18 @@ JS = """
     scroller.scrollLeft = drag.l - (ev.clientX - drag.x); scroller.scrollTop = drag.t - (ev.clientY - drag.y); });
   addEventListener('mouseup', () => drag = null);
 
-  const textPane = reader.querySelector('.text');
-  const showBox = (id, scrollText) => {
+  const textPane = reader.querySelector('.textpane');
+  const showBox = (id, scrollText, smooth = true) => {
+    const behavior = smooth ? 'smooth' : 'auto';
     reader.querySelectorAll('.sel').forEach(n => n.classList.remove('sel'));
     const rect = reader.querySelector(`rect[data-r="${id}"]`);
-    const para = reader.querySelector(`.text [data-r="${id}"]`);
+    const para = reader.querySelector(`.textpane [data-r="${id}"]`);
     rect?.classList.add('sel'); para?.classList.add('sel');
     if (scrollText && para) {
       // set scrollTop directly: scrollIntoView would also try to scroll the
       // image pane and the window, and the two animations fight
       const top = para.getBoundingClientRect().top - textPane.getBoundingClientRect().top;
-      textPane.scrollTo({top: textPane.scrollTop + top - textPane.clientHeight / 4,
-                         behavior: 'smooth'});
+      textPane.scrollTo({top: textPane.scrollTop + top - textPane.clientHeight / 4, behavior});
     }
     if (rect) {
       if (zoom < 2) setZoom(2);
@@ -418,18 +451,21 @@ JS = """
       const cy = h * s > scroller.clientHeight ? y * s + scroller.clientHeight / 2 - 30
                                                : (y + h / 2) * s;
       scroller.scrollTo({left: (x + w / 2) * s - scroller.clientWidth / 2,
-                         top: cy - scroller.clientHeight / 2, behavior: 'smooth'});
+                         top: cy - scroller.clientHeight / 2, behavior});
     }
   };
   reader.addEventListener('click', ev => {
     const t = ev.target.closest('[data-r]');
     if (t) showBox(t.dataset.r, t.tagName === 'rect');
   });
-  // jump to the first search hit once the scan has loaded (before then the
-  // canvas has no height, so the scroll position would be clamped)
-  const firstHit = reader.querySelector('.text .hit'), img = canvas.querySelector('img');
-  const jump = () => firstHit && showBox(firstHit.dataset.r, true);
-  if (img.complete) jump(); else img.addEventListener('load', jump, {once: true});
+  // jump to the requested region (?r=, from a contents link) or the first search
+  // hit once the page has fully laid out (before the scan loads the canvas has
+  // no height, so scroll positions get clamped). Instant, not smooth: smooth
+  // scrolls started during page load get cut short.
+  const firstHit = reader.querySelector('.textpane .hit');
+  const target = reader.dataset.select || firstHit?.dataset.r;
+  const jump = () => target && requestAnimationFrame(() => showBox(target, true, false));
+  if (document.readyState === 'complete') jump(); else addEventListener('load', jump, {once: true});
 })();
 """
 
@@ -473,7 +509,8 @@ class Handler(BaseHTTPRequestHandler):
             if issue and not m[3]:
                 return self.send_html(page_issue(cat, issue))
             if issue and self._has_page(issue, int(m[3])):
-                return self.send_html(page_reader(cat, issue, int(m[3]), params.get("q", "")))
+                return self.send_html(page_reader(cat, issue, int(m[3]), params.get("q", ""),
+                                                  params.get("r", "")))
         if m := re.fullmatch(r"/(img|thumb)/([a-z0-9-]+)/(.+)/(\d+)", path):
             issue = cat.issue(m[2], m[3])
             if issue and self._has_page(issue, int(m[4])):
