@@ -9,7 +9,7 @@ issues by title and date, keeps provenance, and runs the issue-level stages. It
 generalizes the pipeline built for [The Negro World Archive](https://negroworldarchive.org).
 
 > **Status: early.** Working so far: the project format, bringing in issues from the
-> Internet Archive or your own PDFs, OCR, export, and `status`.
+> Internet Archive or your own PDFs, OCR, export, a local reading/search site, and `status`.
 
 ## Pipeline
 
@@ -19,7 +19,7 @@ generalizes the pipeline built for [The Negro World Archive](https://negroworlda
 | OCR, with newspaper reading order | `paperpress ocr` (via newspaper-ocr) | working |
 | Remove duplicate page scans | `paperpress dedup` | planned |
 | Table of contents (LLM, **optional**) | `paperpress profile`, `paperpress enrich` | planned |
-| Browse and search on your own machine | `paperpress serve` | planned |
+| Browse and search on your own machine | `paperpress serve` | working |
 | Text corpus for research | `paperpress export` | working |
 | Public static site with search | `paperpress build` | planned |
 
@@ -115,6 +115,24 @@ This writes the corpus to `export/`:
 
 CSVs are UTF-8 with a byte-order mark so Excel opens them correctly. Issues that
 haven't been OCR'd yet are skipped and counted. Re-running replaces the export.
+
+## Browse and search
+
+```bash
+paperpress serve            # opens http://127.0.0.1:8000/ in your browser
+```
+
+This runs a small website on your own computer. It listens on 127.0.0.1 only, so
+nothing is shared. It has titles, issues by year with cover thumbnails, and a reader
+that shows each scan with its OCR regions boxed beside the text in reading order.
+Clicking a box finds its paragraph, and clicking a paragraph finds its box. There's
+a "Copy citation" button, and the arrow keys turn pages.
+
+Search covers every OCR'd page and supports `"exact phrases"` and `suffrag*` prefixes.
+English stemming is on, so `voting` also finds "vote". You can filter by title and
+date and sort by relevance or date. A result opens the page with the hits highlighted
+and scrolled into view. The search index (`.paperpress/search.db`) updates itself
+when you OCR more issues.
 
 ## Your own PDFs
 

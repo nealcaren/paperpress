@@ -7,3 +7,5 @@ __pycache__/
 examples/*/titles/
 examples/*/ocr_run.log
 examples/*/export/
+.paperpress/
+examples/*/.paperpress/

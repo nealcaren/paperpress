@@ -278,6 +278,40 @@ def export_cmd(titles, out, txt):
 
 
 @main.command()
+@click.option("--port", type=int, default=8000, show_default=True,
+              help="Port to listen on (the next free one is used if it's taken).")
+@click.option("--no-open", is_flag=True, help="Don't open a browser window.")
+def serve(port, no_open):
+    """Browse, read and search the archive in your web browser.
+
+    Runs only on this computer (127.0.0.1); nothing is shared. Stop with Ctrl-C.
+    """
+    import webbrowser
+
+    from . import search
+    from .serve import make_server
+
+    project = _project()
+    _, rebuilt = search.ensure_index(project)
+    if rebuilt:
+        click.echo("built the search index")
+    try:
+        server = make_server(project, port)
+    except OSError as e:
+        raise click.ClickException(str(e))
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    click.echo(f"serving {project.name} at {url}  (Ctrl-C to stop)")
+    if not no_open:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        click.echo("\nstopped")
+    finally:
+        server.server_close()
+
+
+@main.command()
 def status():
     """Summarize what's in the project, title by title."""
     project = _project()

@@ -48,7 +48,17 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
 - `export.py` turns `full_text.json` + `issue.json` into `export/` (pages.jsonl/csv, issues.csv,
   optional txt/, README.txt), built in `export.partial` and swapped in. Page ids are
   `<slug>_<issue-folder-name>_pNN`. IA page links are `<details-url>/page/n<source_leaf>`.
-- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | ocr | export | status`).
+- `search.py` is the SQLite FTS5 index at `.paperpress/search.db` (porter stemming). It's a
+  cache keyed by a signature of every `full_text.json` (size+mtime), so `ensure_index()`
+  rebuilds when OCR changes. `fts_query()` quotes every user term, so FTS syntax can't
+  break a query.
+- `serve.py` is the standard-library `ThreadingHTTPServer` on 127.0.0.1. HTML, CSS and JS
+  are inline strings. URLs are resolved through the `Catalog` (never joined onto disk
+  paths), so traversal can't escape the project. Thumbnails are cached in
+  `.paperpress/thumbs/`. The reader overlays region boxes as SVG over the scan; the
+  `?q=` highlighting is a prefix approximation of FTS5 stemming. The server keeps its
+  code in memory, so restart `serve` after editing it.
+- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | ocr | export | serve | status`).
 - Source OCR (IA djvu text, PDF text layers) is a comparison baseline only. The archive's text
   will come from the `ocr` stage (newspaper-ocr, with reading order). LLM TOC enrichment
   (`profile`/`enrich`, ported from Negro World) is planned and optional, so nothing
