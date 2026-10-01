@@ -33,7 +33,16 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
 - `sources/ia.py` is the Internet Archive adapter (one IA item = one issue). It takes pages
   from IA's IIIF v3 manifest and images from IA's IIIF image service (Cantaloupe). It keeps
   IA's `_djvu.txt` OCR as a baseline.
-- `cli.py` is the Click entry point (`paperpress init | add ia | status`).
+- `sources/pdf.py` handles bring-your-own PDFs (one PDF = one issue). `plan()` dates every
+  file before any are added; the date format is inferred from **all** file names, including
+  0-byte ones, because the names are still evidence. Page images are copied out as the
+  original JPEGs when possible, otherwise rendered at ≤300 ppi (never upsampled). Issues are
+  identified by sha256. It uses pypdfium2, not PyMuPDF (AGPL).
+- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | status`).
+- Source OCR (IA djvu text, PDF text layers) is a comparison baseline only. The archive's text
+  will come from the `ocr` stage (newspaper-ocr, with reading order). LLM TOC enrichment
+  (`profile`/`enrich`, ported from Negro World) is planned and optional, so nothing
+  downstream may require `toc.json`.
 
 ## IA image-server quirks (learned the hard way)
 

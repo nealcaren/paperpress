@@ -19,9 +19,12 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import tomllib
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterator
 
 CONFIG_NAME = "paper.toml"
 UNDATED = "_undated"
@@ -151,6 +154,30 @@ def write_issue(issue_dir: Path, data: dict) -> None:
     tmp = issue_dir / "issue.json.tmp"
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     tmp.replace(issue_dir / "issue.json")
+
+
+@contextmanager
+def staged_issue(dest: Path) -> Iterator[Path]:
+    """Build an issue in `<dest>.partial`, then swap it into `dest` on success.
+
+    The body must call write_issue() on the yielded folder. On any error the
+    partial folder is removed, so a failed fetch never leaves a half-issue.
+    """
+    tmp = dest.with_name(dest.name + ".partial")
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    (tmp / "images").mkdir(parents=True)
+    (tmp / "source").mkdir()
+    try:
+        yield tmp
+        if not (tmp / "issue.json").exists():
+            raise ProjectError(f"{dest.name}: issue.json was never written")
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    if dest.exists():
+        shutil.rmtree(dest)
+    tmp.rename(dest)
 
 
 def safe_name(s: str) -> str:

@@ -8,9 +8,25 @@ paperpress handles everything above the page. OCR itself is done by
 issues by title and date, keeps provenance, and runs the issue-level stages. It
 generalizes the pipeline built for [The Negro World Archive](https://negroworldarchive.org).
 
-> **Status: early.** Working so far: the project format, fetching from the Internet
-> Archive, and `status`. Next: OCR (via newspaper-ocr), duplicate-page removal,
-> table-of-contents enrichment, a static site with search, and corpus export.
+> **Status: early.** Working so far: the project format, bringing in issues from the
+> Internet Archive or your own PDFs, and `status`.
+
+## Pipeline
+
+| Stage | Command | Status |
+|---|---|---|
+| Bring in issues | `paperpress add ia` / `paperpress add pdf` | working |
+| OCR, with newspaper reading order | `paperpress ocr` (via newspaper-ocr) | next |
+| Remove duplicate page scans | `paperpress dedup` | planned |
+| Table of contents (LLM, **optional**) | `paperpress profile`, `paperpress enrich` | planned |
+| Browse and search on your own machine | `paperpress serve` | planned |
+| Text corpus for research | `paperpress export` | planned |
+| Public static site with search | `paperpress build` | planned |
+
+The archive's text always comes from paperpress's own OCR. Any OCR that came with
+the source (IA's text, a PDF's text layer) is kept in `source/` only as a baseline
+to compare against. The LLM table of contents is an extra: search, reading and
+export all work without it.
 
 ## Quick start
 
@@ -55,6 +71,24 @@ paperpress add ia <title> [IDENTIFIERS...] [--query Q] [--from DATE] [--to DATE]
 - Each page records its IA IIIF image-service URL, so a published site can serve
   IA's images instead of hosting its own.
 
+## Your own PDFs
+
+```bash
+paperpress add pdf <title> <files or folders...> [--date-format MMDDYYYY] [--dry-run]
+```
+
+- One PDF is one issue, and the date comes from the file name. The date's digit order
+  (`19600304`, `03041960`, `04031960`) is worked out from all the file names together.
+  If every day in the batch is 12 or under, MM/DD and DD/MM can't be told apart, and
+  you'll be asked for `--date-format`. You can also set `date_format` on the title in
+  `paper.toml`.
+- If a page is a single JPEG scan at or below 300 ppi, the original image is copied
+  out untouched. Otherwise the page is rendered at 300 ppi, and never above the scan's
+  own resolution.
+- Each PDF is identified by its checksum, so adding the same file again (even renamed
+  or moved) is skipped. Empty (0-byte) files are reported and skipped. Use `--copy` to
+  keep the original PDFs inside the project.
+
 ## Development
 
 ```bash
@@ -62,6 +96,9 @@ uv venv && uv pip install -e '.[dev]'
 .venv/bin/pytest
 ```
 
-`examples/suffrage/` is a sample project with three U.S. suffrage papers on the
-Internet Archive: *The Revolution* (1868–72), *The Woman's Journal* (1870–1917) and
-*The Suffragist* (1913–21).
+Two sample projects:
+
+- `examples/suffrage/` uses the Internet Archive: *The Revolution* (1868–72),
+  *The Woman's Journal* (1870–1917) and *The Suffragist* (1913–21).
+- `examples/dth/` uses your own PDFs: *The Daily Tar Heel*, from files named
+  `dth_<LCCN>_<MMDDYYYY>.pdf`.

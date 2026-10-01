@@ -1,0 +1,10 @@
+# Example project: bring-your-own PDFs. The Daily Tar Heel (UNC Chapel Hill),
+# one PDF per issue named dth_<LCCN>_<MMDDYYYY>.pdf.
+
+[project]
+name = "Daily Tar Heel sample"
+
+[[titles]]
+slug = "dth"
+name = "The Daily Tar Heel"
+kind = "newspaper"

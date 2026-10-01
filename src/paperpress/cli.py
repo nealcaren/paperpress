@@ -118,6 +118,66 @@ def add_ia(title, identifiers, query, date_from, date_to, limit, ppi, max_width,
         raise click.ClickException(f"{len(failed)} item(s) failed; re-run to retry them")
 
 
+@add.command("pdf")
+@click.argument("title")
+@click.argument("paths", nargs=-1, required=True,
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--date-format", help="How dates are written in the file names, e.g. MMDDYYYY, "
+              "YYYYMMDD, DD-MM-YYYY (default: worked out from the names, or the title's "
+              "date_format in paper.toml).")
+@click.option("--ppi", type=int, default=300, show_default=True,
+              help="Downsample pages scanned at a higher resolution to this (0 keeps native).")
+@click.option("--copy", is_flag=True, help="Also keep a copy of each PDF in the issue's source/.")
+@click.option("--force", is_flag=True, help="Re-add PDFs that are already in the project.")
+@click.option("--dry-run", is_flag=True, help="Show the date each file would get, add nothing.")
+def add_pdf(title, paths, date_format, ppi, copy, force, dry_run):
+    """Add your own PDFs (files or folders) as issues of TITLE.
+
+    Each PDF is one issue, dated from its file name. The order of the date's
+    digits is worked out from all the names together; if it's ambiguous (every
+    day is 12 or under), you'll be asked for --date-format.
+
+    \b
+      paperpress add pdf dth ~/scans/dth --dry-run
+      paperpress add pdf dth ~/scans/dth --date-format MMDDYYYY
+    """
+    from .dates import DateFormatError
+    from .sources import pdf
+
+    project = _project()
+    try:
+        t = project.title(title)
+        fmt, planned = pdf.plan(list(paths), date_format or t.extra.get("date_format"))
+    except (ProjectError, DateFormatError, pdf.PDFError) as e:
+        raise click.ClickException(str(e))
+    ok = [p for p in planned if not p.problem]
+    bad = [p for p in planned if p.problem]
+    click.echo(f"{len(planned)} PDF(s) for {t.name}; dates read as {fmt}")
+    if bad:
+        reasons = Counter(p.problem for p in bad)
+        click.echo(f"  skipping {len(bad)}: " + "; ".join(f"{n} {r}" for r, n in reasons.items()))
+    if dry_run:
+        for p in planned:
+            click.echo(f"  {p.date or '----------'}  {p.path.name}"
+                       + (f"   ({p.problem})" if p.problem else ""))
+        return
+
+    counts, failed = Counter(), []
+    for n, p in enumerate(ok, start=1):
+        try:
+            status, dest = pdf.add_pdf(project, title, p.path, p.date, ppi=ppi or None,
+                                       copy=copy, force=force)
+        except (pdf.PDFError, OSError) as e:
+            failed.append(p.path)
+            click.echo(f"[{n}/{len(ok)}] FAILED {p.path.name}: {e}", err=True)
+            continue
+        counts[status] += 1
+        click.echo(f"[{n}/{len(ok)}] {status:13} {p.path.name} -> {dest.relative_to(project.root)}")
+    click.echo(", ".join(f"{v} {k}" for k, v in counts.items()) or "nothing added")
+    if failed:
+        raise click.ClickException(f"{len(failed)} PDF(s) failed")
+
+
 @main.command()
 def status():
     """Summarize what's in the project, title by title."""

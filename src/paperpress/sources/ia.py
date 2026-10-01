@@ -9,7 +9,6 @@ later point at IA's tiles instead of hosting images itself.
 from __future__ import annotations
 
 import json
-import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor
 import urllib.error
@@ -22,7 +21,7 @@ from typing import Iterator
 
 from .. import __version__
 from ..dates import parse_date
-from ..project import Project, page_name, write_issue
+from ..project import Project, page_name, staged_issue, write_issue
 
 USER_AGENT = f"paperpress/{__version__} (+https://github.com/nealcaren/paperpress)"
 META_URL = "https://archive.org/metadata/{id}"
@@ -223,13 +222,7 @@ def fetch_issue(project: Project, title_slug: str, identifier: str, *,
 
     found = issue_date(meta)
     dest = existing or project.new_issue_dir(title_slug, found[0] if found else None, identifier)
-    tmp = dest.with_name(dest.name + ".partial")
-    if tmp.exists():
-        shutil.rmtree(tmp)
-    (tmp / "images").mkdir(parents=True)
-    (tmp / "source").mkdir()
-
-    try:
+    with staged_issue(dest) as tmp:
         records = _download_pages(tmp, pages, native_ppi=_int(meta.get("ppi")),
                                   ppi=ppi, max_width=max_width, workers=workers)
         ocr_file = None
@@ -241,12 +234,4 @@ def fetch_issue(project: Project, title_slug: str, identifier: str, *,
             (tmp / "source" / "ia_ocr.txt").write_bytes(_get(url))
             ocr_file = "source/ia_ocr.txt"
         write_issue(tmp, build_issue_record(identifier, meta, title_slug, records, ocr_file))
-    except BaseException:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise
-
-    if dest.exists():
-        shutil.rmtree(dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp.rename(dest)
     return ("fetched" if found else "fetched-undated"), dest

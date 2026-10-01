@@ -21,6 +21,8 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0",
+    "pillow>=10.0",
+    "pypdfium2>=4.30",
 ]
 
 [project.optional-dependencies]
