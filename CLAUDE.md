@@ -38,7 +38,14 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   0-byte ones, because the names are still evidence. Page images are copied out as the
   original JPEGs when possible, otherwise rendered at ≤300 ppi (never upsampled). Issues are
   identified by sha256. It uses pypdfium2, not PyMuPDF (AGPL).
-- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | status`).
+- `ocr.py` is the OCR stage. `NewspaperOCR` wraps `newspaper_ocr.Pipeline` (pinned to 0.10.0;
+  default DocLayout-YOLO + Tesseract `news_combo_fast`, overridable through the `[ocr]` table
+  in paper.toml). It writes `page_NN.json` per page, which is newspaper-ocr's JSON
+  **unmodified** plus `page`/`image`/`ocr` keys. `full_text.json` is written last and marks the
+  issue done. Text clean-up (hyphen rejoin, line joining, dropping timeout/error placeholders)
+  happens only when building `full_text.json`. Tests use a fake engine (anything with
+  `describe()` and `page(image)`).
+- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | ocr | status`).
 - Source OCR (IA djvu text, PDF text layers) is a comparison baseline only. The archive's text
   will come from the `ocr` stage (newspaper-ocr, with reading order). LLM TOC enrichment
   (`profile`/`enrich`, ported from Negro World) is planned and optional, so nothing

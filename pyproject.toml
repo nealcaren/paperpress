@@ -23,6 +23,7 @@ dependencies = [
     "click>=8.0",
     "pillow>=10.0",
     "pypdfium2>=4.30",
+    "newspaper-ocr[doclayout]==0.10.0",
 ]
 
 [project.optional-dependencies]

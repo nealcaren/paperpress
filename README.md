@@ -9,14 +9,14 @@ issues by title and date, keeps provenance, and runs the issue-level stages. It
 generalizes the pipeline built for [The Negro World Archive](https://negroworldarchive.org).
 
 > **Status: early.** Working so far: the project format, bringing in issues from the
-> Internet Archive or your own PDFs, and `status`.
+> Internet Archive or your own PDFs, OCR, and `status`.
 
 ## Pipeline
 
 | Stage | Command | Status |
 |---|---|---|
 | Bring in issues | `paperpress add ia` / `paperpress add pdf` | working |
-| OCR, with newspaper reading order | `paperpress ocr` (via newspaper-ocr) | next |
+| OCR, with newspaper reading order | `paperpress ocr` (via newspaper-ocr) | working |
 | Remove duplicate page scans | `paperpress dedup` | planned |
 | Table of contents (LLM, **optional**) | `paperpress profile`, `paperpress enrich` | planned |
 | Browse and search on your own machine | `paperpress serve` | planned |
@@ -70,6 +70,33 @@ paperpress add ia <title> [IDENTIFIERS...] [--query Q] [--from DATE] [--to DATE]
   IA periodicals were scanned at 800 ppi.
 - Each page records its IA IIIF image-service URL, so a published site can serve
   IA's images instead of hosting its own.
+
+## OCR
+
+```bash
+paperpress ocr [TITLES...] [--from DATE] [--to DATE] [--limit N] [--force]
+```
+
+This runs [newspaper-ocr](https://github.com/nealcaren/newspaper-ocr) 0.10 on every
+page. Layout detection finds the articles, headlines and columns and puts them in
+newspaper reading order, and then each region is recognized. By default it uses
+DocLayout-YOLO for layout and Tesseract with newspaper-ocr's fine-tuned
+`news_combo_fast` model. That runs on any laptop with Tesseract installed
+(`brew install tesseract`, `apt install tesseract-ocr`), at about 20 s per page on an
+M-series Mac. You can change the engine in `paper.toml`:
+
+```toml
+[ocr]
+detector = "doclayout_yolo"
+recognizer = "tesseract"
+recognizer_model = "news_combo_fast"
+```
+
+Each issue folder gets one `page_NN.json` per page, which is newspaper-ocr's output
+unchanged: regions in reading order with boxes, labels, text and status. It also gets
+a `full_text.json` with the issue's text page by page, with hyphenated line breaks
+rejoined. Finished pages are skipped, so stopping and re-running picks up where it
+left off.
 
 ## Your own PDFs
 

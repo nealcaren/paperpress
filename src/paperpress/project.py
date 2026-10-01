@@ -41,6 +41,12 @@ name = "{name}"
 # name = "The Woman's Journal"
 # kind = "newspaper"                   # newspaper | magazine
 # ia_query = "collection:pub_the-womans-journal"   # optional default for `paperpress add ia`
+
+# OCR engine (newspaper-ocr). The default runs anywhere Tesseract is installed:
+# [ocr]
+# detector = "doclayout_yolo"
+# recognizer = "tesseract"
+# recognizer_model = "news_combo_fast"
 '''
 
 
@@ -62,6 +68,7 @@ class Project:
     root: Path
     name: str
     titles: dict[str, Title]
+    ocr: dict = field(default_factory=dict)      # the [ocr] table: newspaper-ocr settings
 
     @classmethod
     def load(cls, start: Path | str = ".") -> "Project":
@@ -93,7 +100,7 @@ class Project:
                 ia_query=t.get("ia_query"),
                 extra={k: v for k, v in t.items() if k not in known})
         return cls(root=cfg.parent, name=data.get("project", {}).get("name", cfg.parent.name),
-                   titles=titles)
+                   titles=titles, ocr=data.get("ocr", {}))
 
     def title(self, slug: str) -> Title:
         if slug not in self.titles:

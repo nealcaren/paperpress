@@ -179,6 +179,75 @@ def add_pdf(title, paths, date_format, ppi, copy, force, dry_run):
 
 
 @main.command()
+@click.argument("titles", nargs=-1)
+@click.option("--from", "date_from", help="Only issues on or after this date (YYYY-MM-DD).")
+@click.option("--to", "date_to", help="Only issues on or before this date (YYYY-MM-DD).")
+@click.option("--limit", type=int, help="OCR at most this many issues this run.")
+@click.option("--force", is_flag=True, help="Redo pages that were already OCR'd.")
+def ocr(titles, date_from, date_to, limit, force):
+    """OCR every issue (or just TITLES) with newspaper-ocr.
+
+    Finished pages are skipped, so you can stop at any time and re-run the same
+    command to pick up where it left off. The engine is set in paper.toml's
+    [ocr] table (default: DocLayout-YOLO layout + Tesseract).
+    """
+    from . import ocr as ocr_stage
+
+    project = _project()
+    try:
+        slugs = [project.title(t).slug for t in titles] or list(project.titles)
+    except ProjectError as e:
+        raise click.ClickException(str(e))
+    todo = []
+    for slug in slugs:
+        for d in project.issue_dirs(slug, include_undated=True):
+            date = DATE_DIR.match(d.name)
+            if (date_from or date_to) and not date:
+                continue
+            if date and ((date_from and date[1] < date_from) or (date_to and date[1] > date_to)):
+                continue
+            if force or not ocr_stage.is_done(d):
+                todo.append(d)
+    if limit:
+        todo = todo[:limit]
+    if not todo:
+        click.echo("nothing to OCR (every issue is done; --force to redo)")
+        return
+
+    pages_left = sum(len(read_issue(d)["pages"]) for d in todo)
+    click.echo(f"OCR: {len(todo)} issue(s), {pages_left} page(s)")
+    try:
+        engine = ocr_stage.NewspaperOCR(project.ocr)
+    except (ValueError, ImportError) as e:
+        raise click.ClickException(f"can't start the OCR engine: {e}")
+    about = engine.describe()
+    click.echo("engine: " + ", ".join(f"{k}={v}" for k, v in about.items()))
+
+    total_pages = total_secs = 0.0
+    failed = []
+    for n, d in enumerate(todo, start=1):
+        rel = d.relative_to(project.root / "titles")
+        try:
+            s = ocr_stage.ocr_issue(d, engine, force=force,
+                                    log=lambda m: click.echo(f"\r  {rel} {m} ", nl=False))
+        except Exception as e:                     # one bad page shouldn't stop the run
+            failed.append(d)
+            click.echo(f"[{n}/{len(todo)}] FAILED {rel}: {e}", err=True)
+            continue
+        total_pages += s["done"]
+        total_secs += s["seconds"]
+        pages_left -= s["pages"]
+        eta = ""
+        if total_pages and pages_left:
+            eta = f", ~{pages_left * total_secs / total_pages / 60:.0f} min left"
+        flagged = f", {s['flagged']} flagged" if s["flagged"] else ""
+        click.echo(f"\r[{n}/{len(todo)}] {rel}: {s['pages']} pages, {s['regions']} regions"
+                   f"{flagged} ({s['seconds']:.0f}s{eta})")
+    if failed:
+        raise click.ClickException(f"{len(failed)} issue(s) failed; re-run to retry")
+
+
+@main.command()
 def status():
     """Summarize what's in the project, title by title."""
     project = _project()
@@ -192,7 +261,9 @@ def status():
         pages = sum(len(read_issue(d)["pages"]) for d in dirs)
         dates = Counter(DATE_DIR.match(d.name).group(1) for d in dated)
         span = f"{min(dates)} to {max(dates)}" if dates else "no dated issues"
-        click.echo(f"{t.name} ({slug}): {len(dirs)} issues, {pages} pages, {span}")
+        ocrd = sum(1 for d in dirs if (d / "full_text.json").exists())
+        click.echo(f"{t.name} ({slug}): {len(dirs)} issues, {pages} pages, {span}; "
+                   f"OCR'd {ocrd}/{len(dirs)}")
         if undated:
             click.echo(f"  {len(undated)} undated: " + ", ".join(d.name for d in undated))
         dup = [d for d, c in dates.items() if c > 1]
