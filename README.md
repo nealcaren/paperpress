@@ -4,7 +4,7 @@
 cite, a text corpus for your research, and a website you can share. It runs on a
 laptop.**
 
-![The paperpress reader: a page of The Suffragist with OCR regions boxed, beside the text in reading order, with search hits highlighted](docs/images/reader.jpg)
+![The paperpress reader: a page of The Suffragist with OCR regions boxed, beside the text in reading order, with search hits highlighted](https://raw.githubusercontent.com/nealcaren/paperpress/main/docs/images/reader.jpg)
 
 You have issues of a periodical, either scans on the Internet Archive or a folder of
 PDFs from a library. paperpress organizes them by title and date and OCRs every page
@@ -28,7 +28,7 @@ Try searching for
 paperpress grew out of [The Negro World Archive](https://negroworldarchive.org). Its
 OCR comes from [newspaper-ocr](https://github.com/nealcaren/newspaper-ocr).
 
-> **Status: early (0.1).** Everything below works and is tested, but expect rough
+> **Status: early (0.2).** Everything below works and is tested, but expect rough
 > edges, and expect the commands to change before 1.0.
 
 ## Install
@@ -37,9 +37,12 @@ You need Python 3.11 or newer, [uv](https://docs.astral.sh/uv/), and Tesseract:
 
 ```bash
 brew install tesseract              # macOS;  Ubuntu: sudo apt install tesseract-ocr
-uv tool install git+https://github.com/nealcaren/paperpress
+uv tool install paperpress
 paperpress --help
 ```
+
+(`pip install paperpress` works too. To try the newest, unreleased version:
+`uv tool install git+https://github.com/nealcaren/paperpress`.)
 
 The first install downloads the OCR models' dependencies (PyTorch included), which
 takes a few minutes and about 1 GB of disk. The first OCR run also downloads the
@@ -98,7 +101,7 @@ the text, in reading order: click a box to find its paragraph, or a paragraph to
 its box. Search covers every page and supports `"exact phrases"`, `suffrag*` and
 English word endings (`voting` also finds "vote"), with filters for title and date.
 
-![Search results across three suffrage papers, each with a citation and a highlighted snippet](docs/images/search.jpg)
+![Search results across three suffrage papers, each with a citation and a highlighted snippet](https://raw.githubusercontent.com/nealcaren/paperpress/main/docs/images/search.jpg)
 
 ### A corpus for research
 
@@ -136,7 +139,7 @@ paperpress build --url https://you.github.io/suffrage-press/
 ```
 
 With `--url`, the site also includes [IIIF](https://iiif.io) manifests (see
-[below](#for-libraries-and-archives)). Without it, use `--base /suffrage-press/` to
+[below](https://github.com/nealcaren/paperpress#for-libraries-and-archives)). Without it, use `--base /suffrage-press/` to
 say only the path.
 
 Page scans are copied into the site at 1,800 px wide, about 0.6 MB a page.
@@ -165,7 +168,7 @@ page, records where they came from, and never replaces a volume or number you or
 source supplied. With the default models it costs
 **about 1–4 cents per issue**, and every run prints what it spent.
 
-![The contents list for an issue of The Woman's Journal, with headlines, bylines, sections and printed page numbers](docs/images/contents.jpg)
+![The contents list for an issue of The Woman's Journal, with headlines, bylines, sections and printed page numbers](https://raw.githubusercontent.com/nealcaren/paperpress/main/docs/images/contents.jpg)
 
 It does better when it knows the paper. `paperpress profile suffragist` reads six
 issues spread across the run and drafts `titles/suffragist/profile.json`: the regular

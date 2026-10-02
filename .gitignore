@@ -11,3 +11,5 @@ examples/*/export/
 examples/*/.paperpress/
 site/
 examples/*/site/
+dist/
+build/

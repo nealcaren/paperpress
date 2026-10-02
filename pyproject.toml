@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paperpress"
-version = "0.1.0"
-description = "Turn a run of dated newspaper or magazine issues into a readable, searchable, citable archive"
+dynamic = ["version"]
+description = "Turn runs of old newspapers and magazines into a searchable, citable archive, a research corpus, and a website"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -13,9 +13,16 @@ authors = [
     {name = "Neal Caren", email = "neal.caren@gmail.com"},
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
     "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Image Recognition",
     "Topic :: Sociology :: History",
     "Topic :: Text Processing :: General",
 ]
@@ -27,11 +34,22 @@ dependencies = [
     "pagefind[bin]>=1.5",
 ]
 
+keywords = ["newspapers", "periodicals", "ocr", "digital humanities", "archives", "iiif",
+            "internet archive", "corpus"]
+
+[project.urls]
+Homepage = "https://github.com/nealcaren/paperpress"
+Demo = "https://nealcaren.github.io/paperpress-demo/"
+Issues = "https://github.com/nealcaren/paperpress/issues"
+
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 
 [project.scripts]
 paperpress = "paperpress.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "paperpress.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
