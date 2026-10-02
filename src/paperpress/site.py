@@ -63,6 +63,7 @@ class Catalog:
     static: bool = False                     # True: Pagefind search, files on disk
     image_src: Callable[["Issue", int], str] | None = None
     thumb_src: Callable[["Issue", int], str] | None = None
+    manifest_href: Callable[["Issue"], str] | None = None   # IIIF, static site with a url
     issues: dict[str, list[Issue]] = field(default_factory=dict)
     built: float = 0.0
 
@@ -188,11 +189,19 @@ def page_issue(cat: Catalog, issue: Issue) -> str:
     body = f"""<h1>{e(t.name)}</h1>
       <p class="issue-meta">{e(issue.label)}{f" · {e(issue.volno)}" if issue.volno else ""}
       · {len(issue.rec['pages'])} pages</p>
-      {f'<p class="meta">Source: {source}</p>' if source else ''}{note}
+      {f'<p class="meta">Source: {source}</p>' if source else ''}{_iiif_link(cat, issue)}{note}
       {_contents(cat, issue, numbering)}
       <h2>Pages</h2><div class="grid pages">{pages}</div>"""
     return layout(cat, f"{t.name}, {issue.label}", body,
                   crumbs=[(t.name, cat.href(f"t/{issue.slug}/")), (issue.label, None)])
+
+
+def _iiif_link(cat: Catalog, issue: Issue) -> str:
+    if not cat.manifest_href:
+        return ""
+    href = cat.manifest_href(issue)
+    return (f'<p class="meta">IIIF manifest: <a href="{e(href)}">{e(href.rsplit("/", 1)[-1])}</a>'
+            f' (open it in Mirador, the Universal Viewer, or other IIIF tools)</p>')
 
 
 def _contents(cat: Catalog, issue: Issue, numbering: dict) -> str:

@@ -46,7 +46,8 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   happens only when building `full_text.json`. Tests use a fake engine (anything with
   `describe()` and `page(image)`).
 - `export.py` turns `full_text.json` + `issue.json` into `export/` (pages.jsonl/csv, issues.csv,
-  optional txt/, README.txt), built in `export.partial` and swapped in. Page ids are
+  dublin_core.csv, articles, optional txt/, README.txt). `source_file` is the PDF's name, never
+  its path (paths reveal the user's folders), built in `export.partial` and swapped in. Page ids are
   `<slug>_<issue-folder-name>_pNN`. IA page links are `<details-url>/page/n<source_leaf>`.
 - `search.py` is the SQLite FTS5 index at `.paperpress/search.db` (porter stemming). It's a
   cache keyed by a signature of every `full_text.json` (size+mtime), so `ensure_index()`
@@ -68,6 +69,23 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   `ia.working_size` for older issues and falling back to copying), writes `.nojekyll` (GitHub
   Pages drops `_undated/` otherwise), then runs `python -m pagefind` from the `pagefind[bin]`
   dependency. It's built in `site.partial` and swapped in.
+- `iiif.py` writes IIIF Presentation 3 into the static site when `build` gets `--url`
+  (IIIF ids must be absolute): a manifest per issue, external AnnotationPages of OCR regions
+  (`supplementing`, `#xywh=` targets), toc.json as Ranges, and per-title and top-level
+  Collections. Canvas = our page image's pixel space, **except** for IA pages with
+  `iiif_width`: there the canvas is IA's full scan size, and boxes are scaled up, because
+  Mirador draws a service-backed image at the service's size whatever the canvas says. (A
+  mismatch makes boxes land in the wrong place.) `refresh` fills `iiif_width/height` for
+  old issues. Mirador 3 ignores `supplementing` annotations; Mirador 4 shows them. Checked
+  with presentation-validator.iiif.io and Mirador on the demo.
+- `bag.py` (`paperpress bag`) writes a BagIt 1.0 bag (sha256 and sha512 manifests and
+  tagmanifests, Payload-Oxum) of paper.toml, issue folders, profiles and a fresh export.
+  `check_bag` verifies; bagit-python validates our bags.
+- **Outputs never replace foreign folders.** export/, site/ and bags are built in
+  `<dest>.partial` and swapped in, deleting the old dest. `project.check_output` refuses
+  the project itself, its parents, titles/, and any non-empty folder without the
+  `.paperpress-output` marker (or the layout of a pre-marker output). Use
+  `replace_output()` for any new output stage.
 - `enrich.py` is the optional LLM table of contents, ported from Negro World's
   `analyze_issue.py --per-page`: one call per page groups region ids (`r0`...) into
   articles, then a stitch call links cross-page continuations, kept conservative (merges
@@ -93,7 +111,7 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
 - IA page records carry `source_index` (position at IA, used for `/page/n<index>` links) and
   `source_leaf` (scan leaf, from the canvas label, which `page_numbers.json` keys on). Issues
   fetched by 0.1 stored the position as `source_leaf`; `paperpress refresh` repairs them.
-- `cli.py` is the Click entry point (`paperpress init | title add | add ia | add pdf | refresh | ocr | profile | enrich | export | serve | build | status`).
+- `cli.py` is the Click entry point (`paperpress init | title add | add ia | add pdf | refresh | ocr | profile | enrich | export | serve | build | bag | status`).
   `title add` appends a `[[titles]]` block as text (`project.add_title`), so comments in
   paper.toml survive. `--ia` turns a collection or any one issue's URL into
   `collection:<pub_…>` (`ia.query_for`). `ia.count` uses advancedsearch's `numFound`,

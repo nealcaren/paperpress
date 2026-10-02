@@ -7,6 +7,9 @@ Writes into one folder (default <project>/export/):
                   Excel opens it correctly; Excel cuts cells at 32,767
                   characters, and a dense newspaper page can be longer)
     issues.csv    one row per issue, no text: a manifest of the corpus
+    dublin_core.csv
+                  one row per issue in Dublin Core terms (dcterms:title, ...),
+                  for library and repository systems (Omeka, CONTENTdm, ...)
     articles.jsonl / articles.csv
                   one record per article, for issues with a table of contents
                   (`paperpress enrich`); mastheads are left out, ads are kept
@@ -22,12 +25,13 @@ from __future__ import annotations
 import csv
 import json
 import shutil
+from collections import Counter
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import __version__
 from .folios import printed, printed_pages
-from .project import Project, read_issue
+from .project import Project, check_output, read_issue, replace_output
 
 PAGE_FIELDS = ["id", "title", "title_name", "date", "date_precision", "volume", "number",
                "page", "printed_page", "pages_in_issue", "words", "citation", "source", "source_id",
@@ -39,6 +43,13 @@ ARTICLE_FIELDS = ["id", "title", "title_name", "date", "date_precision", "volume
 ISSUE_FIELDS = ["title", "title_name", "date", "date_precision", "volume", "number", "pages",
                 "words", "source", "source_id", "source_url", "source_file", "rights",
                 "folder", "ocr_engine"]
+# Dublin Core terms, plus BIBO's volume/issue (Omeka S knows both vocabularies)
+DC_FIELDS = ["dcterms:identifier", "dcterms:title", "dcterms:isPartOf", "dcterms:date",
+             "bibo:volume", "bibo:issue", "dcterms:type", "dcterms:format", "dcterms:extent",
+             "dcterms:language", "dcterms:publisher", "dcterms:description",
+             "dcterms:tableOfContents", "dcterms:source", "dcterms:rights",
+             "dcterms:bibliographicCitation"]
+DC_CONTENTS = 25           # headlines listed in dcterms:tableOfContents
 
 
 def human_date(iso: str | None, precision: str | None) -> str | None:
@@ -71,17 +82,22 @@ def _quotable(headline: str) -> str:
     return h.replace("“", "‘").replace("”", "’").replace('"', "'").rstrip(".,")
 
 
+def issue_citation(title_name: str, rec: dict) -> str:
+    """The issue part of a reference: "The Woman's Journal, vol. 43, no. 5, February 3, 1912"."""
+    parts = [title_name]
+    if rec.get("volume"):
+        parts.append(f"vol. {rec['volume']}" + (f", no. {rec['number']}" if rec.get("number")
+                                                  else ""))
+    parts.append(human_date(rec.get("date"), rec.get("date_precision")) or "undated")
+    return ", ".join(parts)
+
+
 def citation(title_name: str, rec: dict, page: int | list[int],
              headline: str | None = None) -> str:
     """A footnote-ready reference, e.g. "The Woman's Journal, February 3, 1912, p. 2",
     or for an article '"Headline," The Suffragist, ..., pp. 5–7'."""
-    parts = [f'"{_quotable(headline)},"' if headline else None, title_name]
-    when = human_date(rec.get("date"), rec.get("date_precision"))
-    if rec.get("volume"):
-        parts.append(f"vol. {rec['volume']}" + (f", no. {rec['number']}" if rec.get("number")
-                                                  else ""))
-    parts.append(when or "undated")
-    return (parts[0] + " " if parts[0] else "") + ", ".join(parts[1:]) + f", {page_span(page)}"
+    head = f'"{_quotable(headline)}," ' if headline else ""
+    return f"{head}{issue_citation(title_name, rec)}, {page_span(page)}"
 
 
 def _source_fields(rec: dict, page: dict | None = None) -> dict:
@@ -92,8 +108,10 @@ def _source_fields(rec: dict, page: dict | None = None) -> dict:
     index = page.get("source_index", page.get("source_leaf")) if page else None
     if url and index is not None and src.get("type") == "internet_archive":
         url = f"{url}/page/n{index}"
+    # the PDF's name, never its path: a path names the user's own folders
+    name = src.get("filename") or (Path(src["path"]).name if src.get("path") else None)
     return {"source": src.get("type"), "source_id": src.get("id"), "source_url": url,
-            "source_file": src.get("path")}
+            "source_file": name}
 
 
 def issue_rows(project: Project, slugs: list[str]):
@@ -111,7 +129,13 @@ def issue_rows(project: Project, slugs: list[str]):
     return out, skipped
 
 
+def _is_export(d: Path) -> bool:                  # an export made before the marker file
+    readme = d / "README.txt"
+    return readme.is_file() and "by paperpress" in readme.read_text(errors="replace")[:500]
+
+
 def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False) -> dict:
+    check_output(project, dest, _is_export)
     issues, skipped = issue_rows(project, slugs)
     tmp = dest.with_name(dest.name + ".partial")
     if tmp.exists():
@@ -124,10 +148,13 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
         with (tmp / "pages.jsonl").open("w", encoding="utf-8") as jl, \
              (tmp / "pages.csv").open("w", encoding="utf-8-sig", newline="") as pc, \
              (tmp / "issues.csv").open("w", encoding="utf-8-sig", newline="") as ic, \
+             (tmp / "dublin_core.csv").open("w", encoding="utf-8-sig", newline="") as dc, \
              (tmp / "articles.jsonl").open("w", encoding="utf-8") as aj, \
              (tmp / "articles.csv").open("w", encoding="utf-8-sig", newline="") as ac:
             pages_csv = csv.DictWriter(pc, PAGE_FIELDS)
             issues_csv = csv.DictWriter(ic, ISSUE_FIELDS)
+            dc_csv = csv.DictWriter(dc, DC_FIELDS)
+            dc_csv.writeheader()
             articles_csv = csv.DictWriter(ac, ARTICLE_FIELDS)
             pages_csv.writeheader()
             issues_csv.writeheader()
@@ -175,6 +202,7 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
                     "rights": rec.get("source", {}).get("rights"),
                     "folder": str(d.relative_to(project.root)), "ocr_engine": engine,
                 })
+                dc_csv.writerow(dublin_core(title, d, key, rec, len(full["pages"]), issue_words))
         if not n_articles:
             (tmp / "articles.jsonl").unlink()
             (tmp / "articles.csv").unlink()
@@ -183,11 +211,44 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    if dest.exists():
-        shutil.rmtree(dest)
-    tmp.rename(dest)
+    replace_output(tmp, dest)
     return {"issues": len(issues), "pages": n_pages, "words": n_words, "articles": n_articles,
             "skipped": [str(d.relative_to(project.root)) for d in skipped]}
+
+
+def dublin_core(title, d: Path, key: str, rec: dict, n_pages: int, words: int) -> dict:
+    """One issue as a Dublin Core record (dcterms), for repository imports."""
+    from .enrich import toc_entries
+
+    src = rec.get("source", {})
+    date_ = rec.get("date") or ""
+    if date_ and rec.get("date_precision") == "month":
+        date_ = date_[:7]                                    # W3CDTF: YYYY-MM
+    toc_file = d / "toc.json"
+    entries = toc_entries(json.loads(toc_file.read_text())) if toc_file.exists() else []
+    langs = Counter(a.get("language") for a in entries if a.get("language"))
+    heads = [a["title"] for a in entries
+             if not a["title"].startswith("[") and not a.get("is_advertisement")]
+    contents = " -- ".join(heads[:DC_CONTENTS]) + (" -- ..." if len(heads) > DC_CONTENTS else "")
+    return {
+        "dcterms:identifier": f"{title.slug}_{key.replace('/', '_')}",
+        "dcterms:title": issue_citation(title.name, rec),
+        "dcterms:isPartOf": title.name,
+        "dcterms:date": date_,
+        "bibo:volume": rec.get("volume") or "",
+        "bibo:issue": rec.get("number") or "",
+        "dcterms:type": "Text",                              # DCMI Type Vocabulary
+        "dcterms:format": "image/jpeg",
+        "dcterms:extent": f"{n_pages} page{'s' if n_pages != 1 else ''}",
+        "dcterms:language": " | ".join(l for l, _ in langs.most_common()),
+        "dcterms:publisher": src.get("publisher") or "",
+        "dcterms:description": f"Issue of {title.name}: {n_pages} page images with machine "
+                               f"OCR text ({words:,} words; it contains errors).",
+        "dcterms:tableOfContents": contents,
+        "dcterms:source": src.get("url") or _source_fields(rec)["source_file"] or "",
+        "dcterms:rights": src.get("rights") or "",
+        "dcterms:bibliographicCitation": issue_citation(title.name, rec),
+    }
 
 
 def _write_articles(d: Path, rec: dict, title, page_meta: dict, numbering: dict, jl,
@@ -234,7 +295,9 @@ def _readme(project: Project, slugs, n_issues, n_pages, n_words, txt, n_articles
     titles = "\n".join(f"  {project.titles[s].name} ({s})" for s in slugs)
     files = ["pages.jsonl   one JSON record per page (same columns as pages.csv)",
              "pages.csv     one row per page; `text` is the page's OCR in reading order",
-             "issues.csv    one row per issue, without text"]
+             "issues.csv    one row per issue, without text",
+             "dublin_core.csv   one row per issue in Dublin Core (dcterms) and BIBO terms,\n"
+             "              for importing into Omeka, CONTENTdm and other repository systems"]
     if n_articles:
         files.append(f"articles.jsonl, articles.csv   {n_articles:,} articles from the LLM table "
                      f"of contents\n              (paperpress enrich): headline, author, type, "

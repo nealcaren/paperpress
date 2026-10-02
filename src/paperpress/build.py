@@ -8,11 +8,16 @@ by Pagefind instead of by a server.
     img/<slug>/<issue>/page_NN.jpg      page scans, resized for the web
     thumbs/<slug>/<issue>/page_NN.jpg   cover and page thumbnails
     pagefind/                           the search index (loaded in pieces)
+    iiif/                               IIIF manifests and collections (with `url`)
 
 Images: by default every scan is copied in, resized to `image_width`, so the
 site depends on nothing else. With images="ia", pages from the Internet Archive
 are shown from IA's own image server instead, which keeps a large site small;
 the IIIF request that works for each page is recorded in its issue.json.
+
+With `url` (the address the site will be published at), the build also writes
+IIIF Presentation 3 manifests for library viewers and platforms (see iiif.py);
+IIIF needs absolute URLs, which is why it needs the address.
 
 Built in <out>.partial and swapped in at the end, so a failed build never
 leaves a half-written site.
@@ -27,7 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
-from .project import Project, page_name, write_issue
+from .project import Project, ProjectError, check_output, page_name, replace_output, write_issue
 from .serve import thumb_path
 from .site import (CSS, JS, Catalog, Issue, page_home, page_issue, page_reader,
                    page_search_static, page_title)
@@ -72,11 +77,28 @@ def _ia_sizes(issues: list[Issue], log) -> None:
         write_issue(issue.dir, issue.rec)
 
 
-def build(project: Project, out: Path, *, base: str = "/", images: str = "copy",
-          image_width: int = 1800, pagefind: bool = True,
+def build(project: Project, out: Path, *, base: str | None = None, url: str | None = None,
+          images: str = "copy", image_width: int = 1800, pagefind: bool = True,
           log: Callable[[str], None] = lambda m: None) -> dict:
     if images not in ("copy", "ia"):
         raise BuildError(f"images must be 'copy' or 'ia', not {images!r}")
+    origin = None
+    if url:
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise BuildError(f"url must be the site's full address, like "
+                             f"https://you.github.io/suffrage-press/ (got {url!r})")
+        origin = f"{parts.scheme}://{parts.netloc}"
+        if base is not None and base.strip("/") != parts.path.strip("/"):
+            raise BuildError(f"base {base!r} doesn't match the path of url {url!r}; "
+                             f"give just url")
+        base = parts.path
+    base = base or "/"
+    try:
+        check_output(project, out, lambda d: (d / ".nojekyll").exists()
+                     and (d / "static" / "app.js").exists())     # a site made before the marker
+    except ProjectError as e:
+        raise BuildError(str(e)) from e
     base = "/" + base.strip("/") + "/" if base.strip("/") else "/"
     tmp = out.with_name(out.name + ".partial")
     if tmp.exists():
@@ -95,8 +117,13 @@ def build(project: Project, out: Path, *, base: str = "/", images: str = "copy",
     def thumb_src(issue: Issue, n: int) -> str:
         return rel(f"thumbs/{issue.slug}/{issue.key}/{page_name(n)}.jpg")
 
+    manifest_href = None
+    if origin:
+        def manifest_href(issue: Issue) -> str:
+            return rel(f"iiif/{issue.slug}/{issue.key}/manifest.json")
+
     cat = Catalog(project, base=base, static=True, image_src=image_src,
-                  thumb_src=thumb_src).refresh(max_age=0)
+                  thumb_src=thumb_src, manifest_href=manifest_href).refresh(max_age=0)
     issues = [i for iss in cat.issues.values() for i in iss]
     try:
         if images == "ia":
@@ -142,6 +169,37 @@ def build(project: Project, out: Path, *, base: str = "/", images: str = "copy",
                 _write(folder / "p" / str(p["page"]) / "index.html",
                        page_reader(cat, issue, p["page"]))
                 n_pages += 1
+        if origin:
+            from .iiif import Writer
+
+            def absolute(u: str) -> str:
+                return u if u.startswith(("http://", "https://")) else origin + u
+
+            def copied_size(issue: Issue, n: int):
+                meta = next(p for p in issue.rec["pages"] if p["page"] == n)
+                if image_src(issue, n).startswith(("http://", "https://")):
+                    return None
+                k = min(1.0, image_width / meta["width"])
+                return round(meta["width"] * k), round(meta["height"] * k)
+
+            old = sum(1 for i in issues for p in i.rec["pages"]
+                      if p.get("iiif_service") and not p.get("iiif_width"))
+            if old:
+                log(f"  {old} Internet Archive page(s) were fetched by an older paperpress; "
+                    f"run `paperpress refresh` so IIIF viewers can zoom into IA's full scans")
+            log("writing IIIF manifests")
+            w = Writer(project, tmp, origin + base,
+                       site_url=lambda path: absolute(path if path.startswith("/")
+                                                      else rel(path)),
+                       page_href=cat.page_href,
+                       issue_href=lambda issue: cat.href(issue.path),
+                       image=lambda i, n: absolute(image_src(i, n)),
+                       thumb=lambda i, n: absolute(thumb_src(i, n)),
+                       image_size=copied_size)
+            for issue in issues:
+                w.write_issue(issue)
+            w.write_collections(cat.issues)
+
         # GitHub Pages runs Jekyll by default, which drops folders starting with "_"
         # (like _undated/); this file turns that off
         (tmp / ".nojekyll").write_text("")
@@ -157,8 +215,7 @@ def build(project: Project, out: Path, *, base: str = "/", images: str = "copy",
         shutil.rmtree(tmp, ignore_errors=True)
         raise
 
-    if out.exists():
-        shutil.rmtree(out)
-    tmp.rename(out)
+    replace_output(tmp, out)
     size = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
-    return {"issues": len(issues), "pages": n_pages, "bytes": size}
+    return {"issues": len(issues), "pages": n_pages, "bytes": size, "base": base,
+            "iiif": origin + base + "iiif/collection.json" if origin else None}

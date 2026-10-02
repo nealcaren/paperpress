@@ -24,7 +24,7 @@ import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 CONFIG_NAME = "paper.toml"
 UNDATED = "_undated"
@@ -228,3 +228,32 @@ def safe_name(s: str) -> str:
 
 def page_name(n: int) -> str:
     return f"page_{n:02d}"
+
+
+# --- output folders (export/, site/, bags) ---------------------------------
+
+OUTPUT_MARKER = ".paperpress-output"     # in every folder paperpress may later replace
+
+
+def check_output(project: Project, dest: Path, looks_ours: Callable[[Path], bool]) -> None:
+    """Refuse a destination that rebuilding would destroy: the project itself, a
+    folder holding it, its titles/, or an existing folder paperpress didn't make.
+    (Outputs are built beside `dest` and swapped in, deleting the old `dest`.)"""
+    dest, root = dest.resolve(), project.root.resolve()
+    if dest == root or dest in root.parents:
+        raise ProjectError(f"{dest} holds the project; choose a new folder for the output")
+    if root in dest.parents and dest.relative_to(root).parts[0] == "titles":
+        raise ProjectError("the output can't go inside titles/")
+    if dest.exists() and (not dest.is_dir() or (any(dest.iterdir())
+                                                 and not (dest / OUTPUT_MARKER).exists()
+                                                 and not looks_ours(dest))):
+        raise ProjectError(f"{dest} already exists and wasn't made by paperpress, so it "
+                           f"won't be replaced; choose another folder or delete it first")
+
+
+def replace_output(tmp: Path, dest: Path) -> None:
+    """Swap a finished output folder into place."""
+    (tmp / OUTPUT_MARKER).write_text("made by paperpress; safe for paperpress to replace\n")
+    if dest.exists():
+        shutil.rmtree(dest)
+    tmp.rename(dest)

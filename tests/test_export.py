@@ -63,7 +63,7 @@ def test_export(project, tmp_path):
     assert wj2["source_url"] == "https://archive.org/details/sim_wj/page/n1"
     assert wj2["image"] == "titles/wj/1912-02-03/images/page_02.jpg"
     assert wj2["ocr_engine"] == "newspaper-ocr 0.10.0"
-    assert rows[2]["source_file"] == "/scans/dth_03041960.pdf" and rows[2]["source_url"] is None
+    assert rows[2]["source_file"] == "dth_03041960.pdf" and rows[2]["source_url"] is None
 
     with (out / "pages.csv").open(encoding="utf-8-sig", newline="") as fh:
         csv_rows = list(csv.DictReader(fh))
@@ -102,3 +102,25 @@ def test_citation_quotes_headlines_once():
         '"IF I WERE A WOMAN," WJ, February 10, 1912, p. 41'
     assert citation("WJ", rec, 41, 'Again “Taxation without Representation”.') == \
         '"Again ‘Taxation without Representation’," WJ, February 10, 1912, p. 41'
+
+
+def test_dublin_core(project, tmp_path):
+    arts = [("p1a1", "Votes Now", "news", "en", 1), ("p1a2", "[Short item]", "news", "en", 1),
+            ("p2a1", "Hats", "advertisement", "en", 2), ("p2a2", "Stimmrecht", "news", "de", 2)]
+    (project.title_dir("wj") / "1912-02-03" / "toc.json").write_text(json.dumps({"articles": [
+        {"id": i, "title": t, "type": k, "language": lang, "pages": [n], "start_page": n,
+         "regions": [], "is_advertisement": k == "advertisement"}
+        for i, t, k, lang, n in arts]}))
+    export(project, ["wj", "dth"], tmp_path / "export")
+    with (tmp_path / "export" / "dublin_core.csv").open(encoding="utf-8-sig") as f:
+        wj, dth = csv.DictReader(f)
+    assert wj["dcterms:identifier"] == "wj_1912-02-03"
+    assert wj["dcterms:title"] == "The Woman's Journal, vol. 43, no. 5, February 3, 1912"
+    assert (wj["dcterms:date"], wj["bibo:volume"], wj["bibo:issue"]) == ("1912-02-03", "43", "5")
+    assert (wj["dcterms:type"], wj["dcterms:extent"]) == ("Text", "2 pages")
+    assert wj["dcterms:language"] == "en | de"
+    assert wj["dcterms:tableOfContents"] == "Votes Now -- Stimmrecht"   # no ads, no [notes]
+    assert wj["dcterms:source"] == "https://archive.org/details/sim_wj"
+    assert wj["dcterms:rights"] == "PD"
+    assert dth["dcterms:source"] == "dth_03041960.pdf"                  # a name, not a path
+    assert dth["dcterms:language"] == "" and dth["dcterms:tableOfContents"] == ""

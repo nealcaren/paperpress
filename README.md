@@ -124,11 +124,16 @@ cite them, because OCR makes mistakes.
 
 `paperpress build` writes `site/`: the same pages as `serve`, with search that runs
 in the visitor's browser ([Pagefind](https://pagefind.app)). Put the folder on any
-static host. For a GitHub Pages project site at `https://you.github.io/suffrage-press/`:
+static host. Tell it the address the site will have, e.g. for a GitHub Pages project
+site:
 
 ```bash
-paperpress build --base /suffrage-press/
+paperpress build --url https://you.github.io/suffrage-press/
 ```
+
+With `--url`, the site also includes [IIIF](https://iiif.io) manifests (see
+[below](#for-libraries-and-archives)). Without it, use `--base /suffrage-press/` to
+say only the path.
 
 Page scans are copied into the site at 1,800 px wide, about 0.6 MB a page.
 GitHub Pages allows about 1 GB, which is roughly 1,500 pages. For bigger runs from the
@@ -163,6 +168,32 @@ cents and takes a minute or two. Check the draft, fix what's wrong, add what you
 
 Headlines and bylines come from OCR'd text and an LLM, so treat them as a finding aid,
 not a catalogue record.
+
+### For libraries and archives
+
+paperpress also writes the standard formats that library systems take in:
+
+- **IIIF manifests.** `paperpress build --url ...` adds a IIIF Presentation 3 manifest
+  for every issue: one canvas per page, the OCR text as annotations on each page, the
+  table of contents as ranges, dates for calendar browsing, and collections for each
+  title and the whole archive. Mirador, the Universal Viewer, Omeka S and other IIIF
+  tools can open them, e.g. this
+  [issue of The Suffragist in Mirador](https://projectmirador.org/embed/?iiif-content=https://nealcaren.github.io/paperpress-demo/iiif/suffragist/1917-01-17/manifest.json).
+  Each issue page on the site links its manifest. Internet Archive pages point viewers at
+  IA's full-resolution scans, so they can zoom further than the site does.
+- **Dublin Core.** `paperpress export` writes `export/dublin_core.csv`: one record
+  per issue in Dublin Core terms (`dcterms:title`, `dcterms:date`, `dcterms:isPartOf`,
+  `dcterms:source`, `dcterms:rights`, `dcterms:tableOfContents`…) plus `bibo:volume`
+  and `bibo:issue`, ready for the CSV importers in Omeka, CONTENTdm and similar
+  systems.
+- **BagIt.** `paperpress bag` packages the whole project for deposit with a library
+  or data repository (Dataverse, Zenodo, an institutional repository): the scans, the
+  OCR, the metadata and a fresh export, with SHA-256 and SHA-512 checksums for every
+  file. `paperpress bag --check <bag>` confirms that a bag is still intact.
+
+  ```bash
+  paperpress bag --organization "UNC Chapel Hill" --contact-email you@unc.edu
+  ```
 
 ## Your own PDFs
 
@@ -226,7 +257,8 @@ their position.
 | `paperpress enrich [titles…]` | Optional: LLM table of contents |
 | `paperpress export [titles…] [--txt]` | Write the research corpus |
 | `paperpress serve` | Browse and search on your own computer |
-| `paperpress build [--base /path/] [--images ia]` | Write the public website |
+| `paperpress build [--url URL] [--images ia]` | Write the public website (and IIIF, with `--url`) |
+| `paperpress bag [--out DIR]` | Package the project for a library or data repository |
 | `paperpress refresh` | Re-read Internet Archive metadata without re-downloading |
 | `paperpress status` | Summarize the project |
 

@@ -476,17 +476,64 @@ def export_cmd(titles, out, txt):
 
 
 @main.command()
+@click.argument("titles", nargs=-1)
+@click.option("--out", type=click.Path(file_okay=False, path_type=Path),
+              help="Folder for the bag (default: <project>-bag/ beside the project).")
+@click.option("--organization", help="Source-Organization for bag-info.txt, e.g. your "
+              "university or department.")
+@click.option("--contact-name", help="Contact-Name for bag-info.txt.")
+@click.option("--contact-email", help="Contact-Email for bag-info.txt.")
+@click.option("--check", "check_path", type=click.Path(exists=True, file_okay=False,
+              path_type=Path), help="Instead of making a bag, check that this bag is intact.")
+def bag(titles, out, organization, contact_name, contact_email, check_path):
+    """Package the project as a BagIt bag, for depositing with a library or data
+    repository (Dataverse, Zenodo, an institutional repository, ...).
+
+    The bag holds paper.toml, every issue folder (scans, OCR, contents, source
+    files), and a fresh export with Dublin Core records, plus SHA-256 and SHA-512
+    checksums for every file so the receiver can confirm nothing was lost or
+    changed. The cache and the website are left out; both can be rebuilt.
+    """
+    from .bag import BagError, check_bag, make_bag
+
+    if check_path:
+        problems = check_bag(check_path)
+        for p in problems[:50]:
+            click.echo(p, err=True)
+        if problems:
+            raise click.ClickException(f"{len(problems)} problem(s): the bag is not intact")
+        click.echo(f"{check_path}: valid, every file matches its checksum")
+        return
+    project = _project()
+    try:
+        slugs = [project.title(t).slug for t in titles] or list(project.titles)
+    except ProjectError as e:
+        raise click.ClickException(str(e))
+    dest = out or project.root.parent / f"{project.root.name}-bag"
+    info = {"Source-Organization": organization, "Contact-Name": contact_name,
+            "Contact-Email": contact_email}
+    try:
+        s = make_bag(project, dest, slugs, info=info, log=click.echo)
+    except BagError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"bagged {s['issues']} issues, {s['files']:,} files "
+               f"({s['bytes'] / 1e6:,.0f} MB) -> {s['path']}")
+
+
+@main.command()
 @click.option("--out", type=click.Path(file_okay=False, path_type=Path),
               help="Folder to write (default: site/ in the project).")
-@click.option("--base", default="/", show_default=True,
-              help="URL path the site will live under, e.g. /suffrage-press/ for a GitHub "
-                   "Pages project site.")
+@click.option("--url", help="The address the site will be published at, e.g. "
+              "https://you.github.io/suffrage-press/. Adds IIIF manifests (which need full "
+              "addresses) and sets --base for you.")
+@click.option("--base", help="URL path the site will live under, e.g. /suffrage-press/ for "
+              "a GitHub Pages project site (default: /, or the path of --url).")
 @click.option("--images", type=click.Choice(["copy", "ia"]), default="copy", show_default=True,
               help="copy: put resized scans in the site. ia: show Internet Archive pages "
                    "from IA's image server (smaller site, depends on IA).")
 @click.option("--image-width", type=int, default=1800, show_default=True,
               help="Width of copied page images, in pixels.")
-def build(out, base, images, image_width):
+def build(out, url, base, images, image_width):
     """Write the archive as a static website (search included) for any web host.
 
     The result is a folder of plain files: put it on GitHub Pages, Netlify, or
@@ -498,14 +545,22 @@ def build(out, base, images, image_width):
     project = _project()
     dest = (out or project.root / "site").resolve()
     try:
-        s = build_site(project, dest, base=base, images=images, image_width=image_width,
-                       log=click.echo)
+        s = build_site(project, dest, base=base, url=url, images=images,
+                       image_width=image_width, log=click.echo)
     except BuildError as e:
         raise click.ClickException(str(e))
     click.echo(f"built {s['issues']} issues, {s['pages']} pages "
                f"({s['bytes'] / 1e6:.0f} MB) -> {dest}")
-    click.echo(f"preview: python -m http.server -d {dest} 8001   then open "
-               f"http://127.0.0.1:8001{base if base.startswith('/') else '/' + base}")
+    if s["iiif"]:
+        click.echo(f"IIIF: {s['iiif']} (once published)")
+    else:
+        click.echo("add --url <the site's address> to include IIIF manifests")
+    if s["base"] == "/":
+        click.echo(f"preview: python -m http.server -d {dest} 8001   then open "
+                   f"http://127.0.0.1:8001/")
+    else:
+        click.echo(f"to preview, the folder must be served at {s['base']}; or build again "
+                   f"without --url/--base and preview that")
 
 
 @main.command()

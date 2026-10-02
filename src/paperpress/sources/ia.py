@@ -235,6 +235,8 @@ def _download_pages(tmp: Path, pages: list[Page], *, native_ppi, ppi, max_width,
                 "width": w, "height": round(p.height * w / p.width),
                 "ppi": round(native_ppi * w / p.width) if native_ppi else None,
                 "source_index": p.index, "source_leaf": p.leaf, "iiif_service": p.service,
+                # the scan's full size at IA, which IIIF canvases use
+                "iiif_width": p.width, "iiif_height": p.height,
                 # the exact request that worked: IA's server fails on some sizes
                 "iiif_size": size}
 
@@ -331,6 +333,7 @@ def refresh_issue(issue_dir: Path) -> None:
                       f"{len(rec['pages'])}; re-fetch it with --force")
     for r, p in zip(rec["pages"], pages):
         r["source_index"], r["source_leaf"] = p.index, p.leaf
+        r["iiif_width"], r["iiif_height"] = p.width, p.height
     _attach_page_numbers(rec["pages"], page_numbers(identifier, meta_all.get("files", [])))
     fresh = build_issue_record(identifier, meta_all.get("metadata", {}), rec["title"],
                                rec["pages"], rec["source"].get("ocr"))
