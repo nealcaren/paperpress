@@ -13,11 +13,12 @@ Defaults come from the Negro World bake-off (2026-09): a cheap model that
 segments faithfully for the per-page pass, a stronger one for the small
 stitch pass. Any OpenAI-compatible endpoint works; set [enrich] in paper.toml.
 
-Each page's result is cached under .paperpress/enrich/, keyed by model, so an
-interrupted run resumes without paying for pages it already did.
+Each page's result is cached under .paperpress/enrich/, keyed by model and
+profile, so an interrupted run resumes without paying for pages it already did.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -342,12 +343,14 @@ def enrich_issue(project: Project, issue_dir: Path, llm: Callable, settings: dic
     key = str(issue_dir.relative_to(project.title_dir(title.slug)))
     cache_dir = project.root / ".paperpress" / "enrich" / title.slug / key
     model = settings["model"]
+    profile_key = (hashlib.sha1(json.dumps(profile, sort_keys=True).encode()).hexdigest()[:12]
+                   if profile else None)
 
     def one(page: dict) -> list[dict]:
         cached = cache_dir / f"{page_name(page['page'])}.json"
         if cached.exists() and not force:
             c = json.loads(cached.read_text())
-            if c.get("model") == model:
+            if c.get("model") == model and c.get("profile") == profile_key:
                 return c["articles"]
         if not any(r.get("status") not in NO_TEXT_STATUSES for r in page.get("regions", [])):
             arts = []
@@ -357,7 +360,8 @@ def enrich_issue(project: Project, issue_dir: Path, llm: Callable, settings: dic
             data = ask_json(llm, prompt, model, lambda d: isinstance(d.get("articles"), list))
             arts = clean_page_result(page, data)
         cached.parent.mkdir(parents=True, exist_ok=True)
-        cached.write_text(json.dumps({"model": model, "articles": arts}, ensure_ascii=False))
+        cached.write_text(json.dumps({"model": model, "profile": profile_key, "articles": arts},
+                                      ensure_ascii=False))
         return arts
 
     with ThreadPoolExecutor(max_workers=min(workers, len(pages) or 1)) as pool:

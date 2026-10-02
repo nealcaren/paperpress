@@ -50,18 +50,14 @@ from the Internet Archive. Times are from an M-series MacBook.
 ```bash
 paperpress init suffrage-press
 cd suffrage-press
-cat >> paper.toml <<'EOF'
-
-[[titles]]
-slug = "suffragist"
-name = "The Suffragist"
-ia_query = "collection:pub_the-suffragist"
-EOF
+paperpress title add suffragist "The Suffragist" \
+    --ia https://archive.org/details/pub_the-suffragist
 ```
 
-`slug` is a short name for folders and commands. `ia_query` is an
-[Internet Archive search](https://archive.org/advancedsearch.php) that finds the
-issues, one IA item per issue.
+`suffragist` is a short name for folders and commands; "The Suffragist" is the name
+citations use. `--ia` takes the periodical's Internet Archive collection, or the
+link to any one of its issues, and paperpress finds the rest (here, 315 issues).
+Titles are kept in `paper.toml`, a plain text file you can also edit by hand.
 
 **2. Bring in some issues.**
 
@@ -153,12 +149,20 @@ for each issue, and the export adds `articles.csv`. With the default models it c
 
 ![The contents list for an issue of The Woman's Journal, with headlines, bylines, sections and printed page numbers](docs/images/contents.jpg)
 
+It does better when it knows the paper. `paperpress profile suffragist` reads six
+issues spread across the run and drafts `titles/suffragist/profile.json`: the regular
+sections and columns, the editors and contributors (with the ways OCR misspells their
+names), the organizations, the kinds of advertisers and the languages. It costs a few
+cents. Check the draft, fix what's wrong, add what you know, then run
+`paperpress enrich --force` to redo issues already done.
+
 Headlines and bylines come from OCR'd text and an LLM, so treat them as a finding aid,
 not a catalogue record.
 
 ## Your own PDFs
 
 ```bash
+paperpress title add dth "The Daily Tar Heel"
 paperpress add pdf dth ~/scans/daily-tar-heel --dry-run
 paperpress add pdf dth ~/scans/daily-tar-heel
 ```
@@ -209,9 +213,11 @@ their position.
 | Command | What it does |
 |---|---|
 | `paperpress init <folder>` | Start a project |
+| `paperpress title add <slug> <name> [--ia URL]` | Add a periodical |
 | `paperpress add ia <title> [ids…] [--query Q] [--from D] [--to D] [--limit N]` | Fetch issues from the Internet Archive |
 | `paperpress add pdf <title> <files or folders…> [--date-format F]` | Add your own PDFs |
 | `paperpress ocr [titles…]` | OCR every page not yet OCR'd |
+| `paperpress profile <title>` | Optional: draft a profile of a paper for `enrich` |
 | `paperpress enrich [titles…]` | Optional: LLM table of contents |
 | `paperpress export [titles…] [--txt]` | Write the research corpus |
 | `paperpress serve` | Browse and search on your own computer |
@@ -242,9 +248,6 @@ api_key_env = "OPENROUTER_API_KEY"
 The default OCR engine runs anywhere Tesseract does. On a Linux machine with an
 NVIDIA GPU, newspaper-ocr's MinerU engine is more accurate; see its
 [README](https://github.com/nealcaren/newspaper-ocr#which-backend-newsbench-results).
-For the table of contents, an optional `titles/<slug>/profile.json` tells the model
-about a paper: its regular sections, contributors (and how OCR tends to misspell
-them), organizations and languages.
 
 ## Good to know
 

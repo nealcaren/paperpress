@@ -49,8 +49,8 @@ def _web_image(src: Path, dest: Path, width: int) -> None:
         if im.width > width:
             im = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        im.convert("L" if im.mode in ("L", "1") else "RGB").save(dest, "JPEG", quality=82,
-                                                                 optimize=True)
+        im.convert("L" if im.mode in ("L", "1") else "RGB").save(dest, "JPEG", quality=72,
+                                                                 optimize=True, progressive=True)
 
 
 def _ia_sizes(issues: list[Issue], log) -> None:
@@ -73,7 +73,7 @@ def _ia_sizes(issues: list[Issue], log) -> None:
 
 
 def build(project: Project, out: Path, *, base: str = "/", images: str = "copy",
-          image_width: int = 2000, pagefind: bool = True,
+          image_width: int = 1800, pagefind: bool = True,
           log: Callable[[str], None] = lambda m: None) -> dict:
     if images not in ("copy", "ia"):
         raise BuildError(f"images must be 'copy' or 'ia', not {images!r}")

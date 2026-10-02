@@ -151,3 +151,22 @@ def test_manifest_leaf_labels_and_page_numbers():
 def test_copyright_status_in_publisher_field():
     rec = ia.build_issue_record("x", {"publisher": "Out-of-copyright"}, "wj", [], None)
     assert rec["source"]["rights"] == "Out-of-copyright" and rec["source"]["publisher"] is None
+
+
+@pytest.mark.parametrize("ref", ["pub_x", "https://archive.org/details/pub_x",
+                                 "archive.org/details/issue-1/page/n3/mode/2up"])
+def test_query_for_collection_or_issue(monkeypatch, ref):
+    metas = {"pub_x": {"mediatype": "collection"},
+             "issue-1": {"mediatype": "texts", "collection": ["periodicals", "pub_x"]}}
+    monkeypatch.setattr(ia, "_get_json", lambda url: {"metadata": metas[url.rsplit("/", 1)[1]]})
+    assert ia.query_for(ref)[0] == "collection:pub_x"
+
+
+def test_query_for_loose_item(monkeypatch):
+    monkeypatch.setattr(ia, "_get_json",
+                        lambda url: {"metadata": {"mediatype": "texts", "collection": "x"}})
+    with pytest.raises(ia.IAError, match="ia-query"):
+        ia.query_for("revolution-1870-04-07")
+    monkeypatch.setattr(ia, "_get_json", lambda url: {})
+    with pytest.raises(ia.IAError, match="no Internet Archive item"):
+        ia.query_for("nope")

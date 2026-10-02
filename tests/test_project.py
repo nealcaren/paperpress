@@ -67,3 +67,17 @@ def test_issue_dirs_and_find(project):
     assert len(project.issue_dirs("revolution", include_undated=True)) == 3
     assert project.find_issue("revolution", "u").name == "u"
     assert project.find_issue("revolution", "zzz") is None
+
+
+def test_add_title_keeps_comments_and_reloads(project, tmp_path):
+    from paperpress.project import add_title
+
+    t = add_title(project, "dth", 'The "Daily" Tar Heel', date_format="MMDDYYYY")
+    assert t.name == 'The "Daily" Tar Heel' and t.extra == {"date_format": "MMDDYYYY"}
+    reloaded = Project.load(tmp_path)
+    assert list(reloaded.titles) == ["revolution", "dth"]
+    assert "# OCR engine" in (tmp_path / "paper.toml").read_text()
+    for slug, kind, msg in [("dth", "newspaper", "already"), ("Bad", "newspaper", "slug"),
+                            ("ok", "zine", "kind")]:
+        with pytest.raises(ProjectError, match=msg):
+            add_title(project, slug, "x", kind=kind)

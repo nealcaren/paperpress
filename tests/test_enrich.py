@@ -97,6 +97,10 @@ def test_page_results_are_cached(project):
     llm = FakeLLM()
     en.enrich_issue(project, d, llm, {**SETTINGS, "model": "other/model"})
     assert [m for m, _ in llm.calls].count("other/model") == 2     # new model: no cache hit
+    (project.title_dir("suff") / "profile.json").write_text('{"sections": ["Nevada"]}')
+    llm = FakeLLM()
+    en.enrich_issue(project, d, llm, SETTINGS)
+    assert [m for m, _ in llm.calls].count("cheap/model") == 2     # new profile: no cache hit
 
 
 def test_bad_reply_retries_at_higher_temperature(project):

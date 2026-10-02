@@ -158,6 +158,35 @@ def init_project(root: Path, name: str | None = None) -> Path:
     return cfg
 
 
+def _toml_str(s: str) -> str:
+    return json.dumps(s, ensure_ascii=False)          # a JSON string is a valid TOML basic string
+
+
+def add_title(project: Project, slug: str, name: str, *, kind: str = "newspaper",
+              ia_query: str | None = None, date_format: str | None = None) -> Title:
+    """Append a [[titles]] block to paper.toml (keeping its comments) and return
+    the new title."""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+        raise ProjectError(f"slug {slug!r} must be lowercase letters, digits and hyphens, "
+                           f"e.g. womans-journal")
+    if slug in project.titles:
+        raise ProjectError(f"paper.toml already has a title {slug!r}")
+    if kind not in ("newspaper", "magazine"):
+        raise ProjectError(f"kind must be newspaper or magazine, not {kind!r}")
+    lines = ["", "[[titles]]", f"slug = {_toml_str(slug)}", f"name = {_toml_str(name)}",
+             f"kind = {_toml_str(kind)}"]
+    if ia_query:
+        lines.append(f"ia_query = {_toml_str(ia_query)}")
+    if date_format:
+        lines.append(f"date_format = {_toml_str(date_format)}")
+    cfg = project.root / CONFIG_NAME
+    text = cfg.read_text()
+    cfg.write_text(text + ("" if text.endswith("\n") else "\n") + "\n".join(lines) + "\n")
+    reloaded = Project._from_file(cfg)
+    project.titles = reloaded.titles
+    return project.titles[slug]
+
+
 def read_issue(issue_dir: Path) -> dict:
     return json.loads((issue_dir / "issue.json").read_text())
 

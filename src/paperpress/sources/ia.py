@@ -29,6 +29,7 @@ MANIFEST_URL = "https://iiif.archive.org/iiif/3/{id}/manifest.json"
 DETAILS_URL = "https://archive.org/details/{id}"
 DEFAULT_PPI = 300
 SCRAPE_URL = "https://archive.org/services/search/v1/scrape"
+ADVANCED_URL = "https://archive.org/advancedsearch.php"
 
 
 class IAError(Exception):
@@ -76,6 +77,51 @@ def search(query: str, limit: int | None = None) -> Iterator[dict]:
         cursor = data.get("cursor")
         if not cursor:
             return
+
+
+def count(query: str) -> int:
+    """How many IA items match a query."""
+    # the scrape API's "total" isn't reliable; advanced search's numFound is
+    params = {"q": query, "fl[]": "identifier", "rows": 0, "output": "json"}
+    data = _get_json(f"{ADVANCED_URL}?{urllib.parse.urlencode(params)}")
+    return int(data["response"]["numFound"])
+
+
+def identifier_from(ref: str) -> str:
+    """An IA identifier from an identifier or an archive.org URL
+    (https://archive.org/details/<id>, .../details/<id>/page/n3, ...)."""
+    ref = ref.strip()
+    if "://" not in ref and "archive.org" not in ref:
+        return ref
+    path = urllib.parse.urlparse(ref if "://" in ref else "https://" + ref).path
+    parts = [p for p in path.split("/") if p]
+    for marker in ("details", "metadata", "download"):
+        if marker in parts and parts.index(marker) + 1 < len(parts):
+            return parts[parts.index(marker) + 1]
+    raise IAError(f"can't find an Internet Archive identifier in {ref!r}")
+
+
+def query_for(ref: str) -> tuple[str, str]:
+    """An `ia_query` for a periodical, from its IA collection or any one issue.
+
+    Returns (query, how). A collection becomes `collection:<id>`. A single issue
+    becomes the periodical collection it belongs to: the `pub_` collection IA
+    uses for serials, when it has one.
+    """
+    ident = identifier_from(ref)
+    meta = (_get_json(META_URL.format(id=urllib.parse.quote(ident))) or {}).get("metadata")
+    if not meta:
+        raise IAError(f"no Internet Archive item or collection called {ident!r}")
+    if meta.get("mediatype") == "collection":
+        return f"collection:{ident}", f"the collection {ident}"
+    colls = meta.get("collection") or []
+    colls = [colls] if isinstance(colls, str) else colls
+    serial = [c for c in colls if c.startswith("pub_")]
+    if serial:
+        return f"collection:{serial[0]}", f"the collection {serial[0]}, which holds {ident}"
+    raise IAError(f"{ident} is a single item that isn't in a periodical (pub_) collection; "
+                  f"give --ia-query with an IA search that finds every issue, e.g. "
+                  f"'identifier:revolution-18*'")
 
 
 @dataclass

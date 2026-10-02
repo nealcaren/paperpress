@@ -62,7 +62,8 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   `/img/` and `/thumb/` (thumbnails cached in `.paperpress/thumbs/`). URLs are resolved
   through the `Catalog`, never joined onto disk paths. The server keeps its code in memory,
   so restart `serve` after editing it.
-- `build.py` is the static site: it copies resized scans (`--images copy`) or links IA's IIIF
+- `build.py` is the static site: it copies resized scans (`--images copy`, 1,800 px, q72
+  progressive JPEG) or links IA's IIIF
   server (`--images ia`, using each page's recorded `iiif_size`, probing and saving it via
   `ia.working_size` for older issues and falling back to copying), writes `.nojekyll` (GitHub
   Pages drops `_undated/` otherwise), then runs `python -m pagefind` from the `pagefind[bin]`
@@ -73,9 +74,14 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   must cross pages). `clean_page_result` drops unknown or duplicate region ids. It writes
   `toc.json` with `articles[].regions = [{page, ids}]`, and `article_text()` rebuilds an
   article's text from the page JSON. Per-page results are cached in
-  `.paperpress/enrich/<slug>/<issue>/`, keyed by model. The LLM is an injectable callable
+  `.paperpress/enrich/<slug>/<issue>/`, keyed by model and a hash of the profile. The LLM is an injectable callable
   `(prompt, model, temperature) -> str`; the tests use a fake. `profile_block` also reads
   Negro World's profile keys.
+- `profile.py` (`paperpress profile <title>`) drafts `titles/<slug>/profile.json`: one LLM call
+  per sampled issue (spread across the run) over a digest of every headline plus the head and
+  tail of each text block (bylines and signatures sit at the ends), then one merge call that
+  keeps what recurs and adds `era`. `clean_profile` keeps only the keys `profile_block` reads.
+  It defaults to the stitch model.
 - Region labels become CSS classes in the reader with a `lab-` prefix. DocLayout has a
   label called `text`, which once collided with the page's own `.text` pane.
 - `folios.py` works out printed page numbers: printed = position + one offset per issue,
@@ -87,11 +93,14 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
 - IA page records carry `source_index` (position at IA, used for `/page/n<index>` links) and
   `source_leaf` (scan leaf, from the canvas label, which `page_numbers.json` keys on). Issues
   fetched by 0.1 stored the position as `source_leaf`; `paperpress refresh` repairs them.
-- `cli.py` is the Click entry point (`paperpress init | add ia | add pdf | refresh | ocr | enrich | export | serve | build | status`).
+- `cli.py` is the Click entry point (`paperpress init | title add | add ia | add pdf | refresh | ocr | profile | enrich | export | serve | build | status`).
+  `title add` appends a `[[titles]]` block as text (`project.add_title`), so comments in
+  paper.toml survive. `--ia` turns a collection or any one issue's URL into
+  `collection:<pub_…>` (`ia.query_for`). `ia.count` uses advancedsearch's `numFound`,
+  because the scrape API's `total` is wrong.
 - Source OCR (IA djvu text, PDF text layers) is a comparison baseline only. The archive's text
-  will come from the `ocr` stage (newspaper-ocr, with reading order). LLM TOC enrichment
-  (`profile`/`enrich`, ported from Negro World) is planned and optional, so nothing
-  downstream may require `toc.json`.
+  comes from the `ocr` stage (newspaper-ocr, with reading order). LLM enrichment is
+  optional, so nothing downstream may require `toc.json`.
 
 ## IA image-server quirks (learned the hard way)
 

@@ -7,7 +7,7 @@ import click
 
 from . import __version__
 from .dates import parse_date
-from .project import DATE_DIR, Project, ProjectError, init_project, read_issue
+from .project import DATE_DIR, Project, ProjectError, add_title, init_project, read_issue
 
 
 def _project() -> Project:
@@ -32,7 +32,61 @@ def init(directory: Path, name: str | None):
         cfg = init_project(directory, name)
     except ProjectError as e:
         raise click.ClickException(str(e))
-    click.echo(f"created {cfg}\nnext: add a [[titles]] block to it for each periodical")
+    click.echo(f"created {cfg}\nnext: add each periodical with `paperpress title add`")
+
+
+@main.group()
+def title():
+    """Add periodicals (titles) to the project."""
+
+
+@title.command("add")
+@click.argument("slug")
+@click.argument("name")
+@click.option("--ia", "ia_ref", help="The periodical on the Internet Archive: its collection, "
+              "or any one issue (an archive.org URL or identifier).")
+@click.option("--ia-query", help="An Internet Archive search that finds every issue, "
+              "e.g. 'identifier:revolution-18*' (instead of --ia).")
+@click.option("--kind", type=click.Choice(["newspaper", "magazine"]), default="newspaper",
+              show_default=True)
+@click.option("--date-format", help="How dates are written in your PDFs' file names, "
+              "if they're ambiguous (e.g. MMDDYYYY).")
+def title_add(slug, name, ia_ref, ia_query, kind, date_format):
+    """Add a periodical to paper.toml.
+
+    SLUG is a short name for folders and commands (lowercase, hyphens), NAME is
+    the title as it should be cited.
+
+    \b
+      paperpress title add suffragist "The Suffragist" \\
+          --ia https://archive.org/details/pub_the-suffragist
+      paperpress title add dth "The Daily Tar Heel"         # for your own PDFs
+    """
+    project = _project()
+    if ia_ref and ia_query:
+        raise click.UsageError("give --ia or --ia-query, not both")
+    how = None
+    if ia_ref:
+        from .sources import ia
+        try:
+            ia_query, how = ia.query_for(ia_ref)
+        except ia.IAError as e:
+            raise click.ClickException(str(e))
+    try:
+        add_title(project, slug, name, kind=kind, ia_query=ia_query, date_format=date_format)
+    except ProjectError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"added {name} ({slug}) to paper.toml")
+    if ia_query:
+        from .sources import ia
+        try:
+            found = f": {ia.count(ia_query):,} item(s) on the Internet Archive"
+        except ia.IAError:
+            found = ""
+        click.echo(f"  ia_query = {ia_query!r}" + (f" ({how})" if how else "") + found)
+        click.echo(f"next: paperpress add ia {slug} --limit 2 --dry-run")
+    else:
+        click.echo(f"next: paperpress add pdf {slug} <folder of PDFs> --dry-run")
 
 
 @main.group()
@@ -346,6 +400,51 @@ def enrich(titles, date_from, date_to, limit, model, stitch_model, force):
                                    f"(finished pages are cached)")
 
 
+@main.command()
+@click.argument("title")
+@click.option("--sample", type=int, default=6, show_default=True,
+              help="How many issues to read, spread across the run.")
+@click.option("--model", help="Model to use (default: the [enrich] stitch_model).")
+@click.option("--force", is_flag=True, help="Replace an existing profile.json.")
+def profile(title, sample, model, force):
+    """Optional: draft a profile of TITLE for `enrich` from a sample of issues.
+
+    An LLM reads a few OCR'd issues and lists the paper's regular sections and
+    columns, contributors (with the ways OCR misspells them), organizations,
+    advertisers and languages. `enrich` uses the profile to recognize sections
+    and spell names. The draft is written to titles/<title>/profile.json for you
+    to check and edit. Costs a few cents.
+    """
+    from . import enrich as en
+    from .profile import ProfileError, draft_profile, write_profile
+
+    project = _project()
+    try:
+        slug = project.title(title).slug
+    except ProjectError as e:
+        raise click.ClickException(str(e))
+    path = project.title_dir(slug) / "profile.json"
+    if path.exists() and not force:
+        raise click.ClickException(f"{path.relative_to(project.root)} already exists "
+                                   f"(edit it, or --force to draft a new one)")
+    settings = {**en.DEFAULT_ENRICH, **project.enrich}
+    model = model or settings["stitch_model"]
+    try:
+        llm = en.make_llm(settings)
+        click.echo(f"drafting a profile of {project.titles[slug].name} with {model}")
+        prof = draft_profile(project, slug, llm, model, sample=sample, log=click.echo)
+    except (ProfileError, en.EnrichError) as e:
+        raise click.ClickException(str(e))
+    path = write_profile(project, slug, prof)
+    counts = ", ".join(f"{len(prof[k])} {k.replace('_', ' ')}" for k in
+                       ("sections", "columns", "contributors", "organizations", "ocr_fixes")
+                       if prof.get(k))
+    click.echo(f"wrote {path.relative_to(project.root)}: {counts or 'nothing found'}"
+               + (f" (${llm.cost:.3f})" if llm.cost else ""))
+    click.echo("check it and fix what's wrong, then `paperpress enrich --force "
+               f"{slug}` to use it on issues already enriched")
+
+
 @main.command("export")
 @click.argument("titles", nargs=-1)
 @click.option("--out", type=click.Path(file_okay=False, path_type=Path),
@@ -385,7 +484,7 @@ def export_cmd(titles, out, txt):
 @click.option("--images", type=click.Choice(["copy", "ia"]), default="copy", show_default=True,
               help="copy: put resized scans in the site. ia: show Internet Archive pages "
                    "from IA's image server (smaller site, depends on IA).")
-@click.option("--image-width", type=int, default=2000, show_default=True,
+@click.option("--image-width", type=int, default=1800, show_default=True,
               help="Width of copied page images, in pixels.")
 def build(out, base, images, image_width):
     """Write the archive as a static website (search included) for any web host.
