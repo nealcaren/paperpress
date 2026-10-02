@@ -158,7 +158,11 @@ An LLM reads each OCR'd page and groups it into articles. Each article gets a
 headline, an author (only from a byline or signature, never a guess), a type (news,
 editorial, letter, poem, advertisement…), a section and a language. A second pass
 links stories that continue on another page. The archive then shows a contents list
-for each issue, and the export adds `articles.csv`. With the default models it costs
+for each issue, and the export adds `articles.csv`. If an issue has no volume and
+number yet (common for PDFs), `enrich` also reads them from the masthead, so citations
+gain "vol. 68, no. 111". It keeps them only when the words it read are really on the
+page, records where they came from, and never replaces a volume or number you or the
+source supplied. With the default models it costs
 **about 1–4 cents per issue**, and every run prints what it spent.
 
 ![The contents list for an issue of The Woman's Journal, with headlines, bylines, sections and printed page numbers](docs/images/contents.jpg)
@@ -248,7 +252,7 @@ in a data repository. Every step can be re-run safely: finished work is skipped,
 an interrupted step leaves nothing half-written.
 
 To fix an issue by hand, edit its `issue.json`. You can correct `volume` and
-`number`, or add `"printed_offset": 40` if its printed page numbers are 40 more than
+`number` (if `enrich` filled them, `enrich_filled` shows the masthead text it read), or add `"printed_offset": 40` if its printed page numbers are 40 more than
 their position. The archive's name, shown on the site and in exports, is `name` under
 `[project]` in `paper.toml`; it starts as the project folder's name.
 

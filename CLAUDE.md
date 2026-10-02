@@ -92,7 +92,12 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   must cross pages). `clean_page_result` drops unknown or duplicate region ids. It writes
   `toc.json` with `articles[].regions = [{page, ids}]`, and `article_text()` rebuilds an
   article's text from the page JSON. Per-page results are cached in
-  `.paperpress/enrich/<slug>/<issue>/`, keyed by model and a hash of the profile. The LLM is an injectable callable
+  `.paperpress/enrich/<slug>/<issue>/`, keyed by model and a hash of the profile. When an issue
+  lacks volume/number, `fill_volume_number` asks the page model for them from page 1's top
+  regions plus the source text layer (`source.ocr`), and `check_volume_number` keeps a
+  field only if the quoted evidence is in that text and contains the number (digits, or
+  Roman for volumes). Filled values go into issue.json with `enrich_filled` provenance;
+  values from the source or a person are never replaced (with force, only enrich's own). The LLM is an injectable callable
   `(prompt, model, temperature) -> str`; the tests use a fake. `profile_block` also reads
   Negro World's profile keys.
 - `profile.py` (`paperpress profile <title>`) drafts `titles/<slug>/profile.json`: one LLM call

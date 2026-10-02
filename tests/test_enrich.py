@@ -20,11 +20,15 @@ PAGES = {
 class FakeLLM:
     """Answers page prompts from PAGES and the stitch prompt with one merge."""
 
-    def __init__(self, bad_first=False):
-        self.calls, self.bad_first = [], bad_first
+    def __init__(self, bad_first=False, masthead=None):
+        self.calls, self.bad_first, self.prompts = [], bad_first, []
+        self.masthead = masthead or {"volume": None, "number": None, "evidence": ""}
 
     def __call__(self, prompt, model, temperature=0):
         self.calls.append((model, temperature))
+        self.prompts.append(prompt)
+        if prompt.startswith("Find the volume"):
+            return json.dumps(self.masthead)
         if self.bad_first and len(self.calls) == 1:
             return "not json at all"
         if prompt.startswith("These are the articles"):
@@ -72,7 +76,8 @@ def test_enrich_issue_builds_toc(project):
     d = project.title_dir("suff") / "1914-09-05"
     llm = FakeLLM()
     s = en.enrich_issue(project, d, llm, SETTINGS)
-    assert s == {"articles": 4, "toc": 2, "ads": 1, "continued": 1}
+    assert s == {"articles": 4, "toc": 2, "ads": 1, "continued": 1, "filled": {}}
+    assert not any(m for m in llm.prompts if m.startswith("Find the volume"))  # has vol./no.
     toc = json.loads((d / "toc.json").read_text())
     arts = {a["id"]: a for a in toc["articles"]}
     newport = arts["p1a2"]
@@ -157,3 +162,47 @@ def test_export_writes_articles(project, tmp_path):
 def test_export_without_toc_has_no_article_files(project, tmp_path):
     export(project, ["suff"], tmp_path / "out")
     assert not (tmp_path / "out" / "articles.jsonl").exists()
+
+
+@pytest.mark.parametrize("answer,expected", [
+    ({"volume": "68", "number": "111", "evidence": "VOLUME LXVIII, NO. 111"},
+     {"volume": "68", "number": "111"}),                       # Roman volume, from the source
+    ({"volume": "2", "number": "36", "evidence": "Vol. II  No. 36"},
+     {"volume": "2", "number": "36"}),                         # whitespace differences are fine
+    ({"volume": "68", "number": "112", "evidence": "VOLUME LXVIII, NO. 111"},
+     {"volume": "68"}),                                        # 112 isn't in the evidence
+    ({"volume": "68", "number": "111", "evidence": "VOLUME 68, NO. 111"}, {}),  # not in text
+    ({"volume": "LXVIII", "number": None, "evidence": "VOLUME LXVIII"}, {}),   # not digits
+])
+def test_volume_number_must_match_the_evidence(answer, expected):
+    text = "THE DAILY TAR HEEL\nVOLUME LXVIII, NO. 111 CHAPEL HILL\nVol. II No. 36"
+    found = en.check_volume_number(answer, text)
+    assert {k: v for k, v in found.items() if k != "evidence"} == expected
+
+
+def test_enrich_fills_missing_volume_and_number(project):
+    d = project.title_dir("suff") / "1914-09-05"
+    rec = json.loads((d / "issue.json").read_text())
+    rec.update(volume=None, number=None)
+    rec["source"]["ocr"] = "source/pdf_text.txt"
+    (d / "source").mkdir()
+    (d / "source" / "pdf_text.txt").write_text("THE SUFFRAGIST\nVOL. II, No. 36 WASHINGTON\n")
+    write_issue(d, rec)
+    llm = FakeLLM(masthead={"volume": "2", "number": "36", "evidence": "VOL. II, No. 36"})
+    s = en.enrich_issue(project, d, llm, SETTINGS)
+    assert s["filled"] == {"volume": "2", "number": "36"}
+    prompt = next(m for m in llm.prompts if m.startswith("Find the volume"))
+    assert "THE SUFFRAGIST" in prompt and "VOL. II, No. 36" in prompt   # page top and source
+    rec = json.loads((d / "issue.json").read_text())
+    assert (rec["volume"], rec["number"]) == ("2", "36")
+    assert rec["enrich_filled"]["fields"] == ["number", "volume"]
+    assert rec["enrich_filled"]["evidence"] == "VOL. II, No. 36"
+
+    # a hand correction is never replaced, even with --force
+    rec["volume"] = "3"
+    rec["enrich_filled"]["fields"] = ["number"]
+    write_issue(d, rec)
+    llm = FakeLLM(masthead={"volume": "2", "number": "36", "evidence": "VOL. II, No. 36"})
+    s = en.enrich_issue(project, d, llm, SETTINGS, force=True)
+    assert s["filled"] == {"number": "36"}
+    assert json.loads((d / "issue.json").read_text())["volume"] == "3"

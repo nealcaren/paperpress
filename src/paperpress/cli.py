@@ -396,8 +396,10 @@ def enrich(titles, date_from, date_to, limit, model, stitch_model, force):
             click.echo(f"[{n}/{len(todo)}] FAILED {rel}: {e}", err=True)
             continue
         cost = f", ${llm.cost - before:.3f}" if llm.cost else ""
+        found = ", ".join(f"{k} {v}" for k, v in s["filled"].items())
         click.echo(f"[{n}/{len(todo)}] {rel}: {s['toc']} articles, {s['ads']} ads, "
-                   f"{s['continued']} continued{cost}")
+                   f"{s['continued']} continued{cost}"
+                   + (f"; read {found} from the masthead" if found else ""))
     if llm.cost:
         click.echo(f"total cost ${llm.cost:.2f} ({llm.tokens:,} tokens)")
     if failed:

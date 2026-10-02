@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Callable
 
 from .ocr import NO_TEXT_STATUSES, region_text
-from .project import Project, page_name, read_issue
+from .project import Project, page_name, read_issue, write_issue
 
 DEFAULT_ENRICH = {
     "model": "openai/gpt-5.6-luna",
@@ -286,6 +286,104 @@ def article_text(issue_dir: Path, article: dict, _pages: dict | None = None) -> 
     return "\n\n".join(p for p in parts if p)
 
 
+# --- volume and number ----------------------------------------------------
+
+MASTHEAD_TOP = 0.3             # share of page 1 searched for the masthead
+SOURCE_TEXT_CAP = 2500         # characters of the source's own text shown to the model
+MASTHEAD_PROMPT = """Find the volume and issue number printed in the masthead of this issue
+of a historical periodical, {title}{when}. Below are the top of its first page as read by
+our OCR, and the start of the source's own text for the same issue. Both contain OCR errors.
+
+Return ONLY JSON: {{"volume": <volume as a number in Arabic digits, e.g. "68" for
+"VOLUME LXVIII", or null>, "number": <issue number in Arabic digits, or null>,
+"evidence": "<the exact words you read them from, copied character for character from
+the text below, e.g. VOLUME LXVIII, NO. 111>"}}
+Use null for anything not printed; never guess from dates or other issues.
+
+TOP OF PAGE 1 (OUR OCR):
+{ocr}
+
+START OF THE SOURCE'S OWN TEXT:
+{source}"""
+
+
+def _roman(n: int) -> str:
+    out = ""
+    for value, letters in ((1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"),
+                           (90, "XC"), (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"),
+                           (4, "IV"), (1, "I")):
+        while n >= value:
+            out, n = out + letters, n - value
+    return out
+
+
+def _squash(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def masthead_texts(issue_dir: Path, rec: dict, page1: dict) -> tuple[str, str]:
+    """(top of page 1 from our OCR, start of the source's own text)."""
+    h = page1.get("height") or 1
+    top = [region_text(r.get("text", "")) for r in page1.get("regions", [])
+           if r.get("status") not in NO_TEXT_STATUSES and r["bbox"]["y0"] < h * MASTHEAD_TOP]
+    source = ""
+    if rec.get("source", {}).get("ocr"):
+        f = issue_dir / rec["source"]["ocr"]
+        if f.exists():
+            source = f.read_text(errors="replace")[:SOURCE_TEXT_CAP]
+    return "\n".join(t for t in top if t)[:SOURCE_TEXT_CAP], source
+
+
+def check_volume_number(data: dict, texts: str) -> dict:
+    """The fields the evidence supports: the evidence must be in the text, and each
+    number must appear in the evidence (in digits, or Roman numerals for a volume)."""
+    evidence = data.get("evidence")
+    if not isinstance(evidence, str) or not evidence.strip() \
+            or _squash(evidence) not in _squash(texts):
+        return {}
+    ev = evidence.upper()
+    out = {}
+    for field in ("volume", "number"):
+        value = str(data.get(field) or "").strip()
+        if not value.isdigit() or not 0 < int(value) < 10000:
+            continue
+        n = int(value)
+        tokens = set(re.findall(r"[0-9]+|[IVXLCDM]+", ev))
+        if str(n) in {t.lstrip("0") for t in tokens} or (field == "volume" and _roman(n) in tokens):
+            out[field] = str(n)
+    if out:
+        out["evidence"] = " ".join(evidence.split())
+    return out
+
+
+def fill_volume_number(issue_dir: Path, rec: dict, page1: dict, llm: Callable, model: str,
+                       title_name: str, *, force: bool = False) -> dict:
+    """Read a missing volume and number from the masthead and save them in issue.json.
+    Never replaces a value from the source or a person, only ones enrich filled before
+    (and those only with force). Returns what was filled."""
+    before = rec.get("enrich_filled", {})
+    open_fields = [f for f in ("volume", "number")
+                   if not rec.get(f) or (force and f in before.get("fields", []))]
+    if not open_fields:
+        return {}
+    ocr, source = masthead_texts(issue_dir, rec, page1)
+    if not (ocr or source):
+        return {}
+    when = f", {rec['date']}" if rec.get("date") else ""
+    prompt = MASTHEAD_PROMPT.format(title=title_name, when=when, ocr=ocr or "(none)",
+                                    source=source or "(none)")
+    found = check_volume_number(ask_json(llm, prompt, model, lambda d: isinstance(d, dict)),
+                                ocr + "\n" + source)
+    filled = {f: found[f] for f in open_fields if f in found}
+    if not filled:
+        return {}
+    rec.update(filled)
+    rec["enrich_filled"] = {"fields": sorted(set(before.get("fields", [])) | set(filled)),
+                            "evidence": found["evidence"], "model": model}
+    write_issue(issue_dir, rec)
+    return filled
+
+
 # --- stitch ----------------------------------------------------------------
 
 def stitch(articles: list[dict], issue_dir: Path, llm: Callable, model: str) -> list[dict]:
@@ -372,6 +470,8 @@ def enrich_issue(project: Project, issue_dir: Path, llm: Callable, settings: dic
             articles.append({"id": f"p{page['page']}a{n}", "start_page": page["page"],
                              "pages": [page["page"]], "continued": False, **a})
     articles = stitch(articles, issue_dir, llm, settings["stitch_model"])
+    filled = fill_volume_number(issue_dir, rec, pages[0], llm, model, title.name,
+                                force=force) if pages else {}
 
     toc = {
         "title": title.slug,
@@ -387,7 +487,8 @@ def enrich_issue(project: Project, issue_dir: Path, llm: Callable, settings: dic
     return {"articles": len(articles),
             "toc": sum(1 for a in articles if a["type"] not in NOT_IN_TOC),
             "ads": sum(1 for a in articles if a["is_advertisement"]),
-            "continued": sum(1 for a in articles if a.get("continued"))}
+            "continued": sum(1 for a in articles if a.get("continued")),
+            "filled": filled}
 
 
 def toc_entries(toc: dict) -> list[dict]:
