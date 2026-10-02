@@ -111,6 +111,10 @@ def infer_filename_format(names: list[str]) -> str:
                               f"pass --date-format (e.g. MMDDYYYY)")
     distinct = {tuple(v) for v in fits.values()}
     if len(distinct) > 1:
-        raise DateFormatError("file names fit more than one date order ("
-                              + ", ".join(fits) + "); pass --date-format")
+        i = next(i for i in range(len(names)) if len({v[i] for v in fits.values()}) > 1)
+        readings = " or ".join(f"{v[i]} ({f})" for f, v in fits.items())
+        raise DateFormatError(
+            f"can't tell the order of the date in the file names: {names[i]!r} could be "
+            f"{readings}, and no file settles it (a day after the 12th would). "
+            f"Pass --date-format with the right one, e.g. --date-format {next(iter(fits))}")
     return next(iter(fits))

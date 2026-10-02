@@ -42,7 +42,8 @@ def test_infer_filename_format():
 
 
 def test_infer_filename_format_ambiguous_or_missing():
-    with pytest.raises(DateFormatError, match="more than one"):
+    with pytest.raises(DateFormatError, match=r"'p_03041960.pdf' could be 1960-03-04 "
+                                              r"\(MMDDYYYY\) or 1960-04-03 \(DDMMYYYY\)"):
         infer_filename_format(["p_03041960.pdf", "p_01021961.pdf"])
     with pytest.raises(DateFormatError, match="can't find a date"):
         infer_filename_format(["p_03041960.pdf", "notes.pdf"])

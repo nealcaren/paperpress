@@ -7,7 +7,8 @@ import click
 
 from . import __version__
 from .dates import parse_date
-from .project import DATE_DIR, Project, ProjectError, add_title, init_project, read_issue
+from .project import (DATE_DIR, Project, ProjectError, add_title, init_project, plural,
+                      read_issue)
 
 
 def _project() -> Project:
@@ -150,6 +151,7 @@ def add_ia(title, identifiers, query, date_from, date_to, limit, ppi, max_width,
     if dry_run:
         for i in items:
             click.echo(f"  {i['identifier']}  {i.get('date', '')}  {i.get('title', '')}")
+        click.echo("dry run: nothing downloaded; run the same command without --dry-run")
         return
 
     counts, failed = Counter(), []
@@ -214,6 +216,7 @@ def add_pdf(title, paths, date_format, ppi, copy, force, dry_run):
         for p in planned:
             click.echo(f"  {p.date or '----------'}  {p.path.name}"
                        + (f"   ({p.problem})" if p.problem else ""))
+        click.echo("dry run: nothing added; run the same command without --dry-run")
         return
 
     counts, failed = Counter(), []
@@ -301,7 +304,9 @@ def ocr(titles, date_from, date_to, limit, force):
     except (ValueError, ImportError) as e:
         raise click.ClickException(f"can't start the OCR engine: {e}")
     about = engine.describe()
-    click.echo("engine: " + ", ".join(f"{k}={v}" for k, v in about.items()))
+    engine_name = about.pop("engine", "OCR")
+    click.echo(f"engine: {engine_name} ("
+               + ", ".join(f"{k}={v}" for k, v in about.items()) + ")")
 
     total_pages = total_secs = 0.0
     failed = []
@@ -471,7 +476,8 @@ def export_cmd(titles, out, txt):
                    f"(run `paperpress ocr`)")
     if not s["pages"]:
         raise click.ClickException("nothing to export yet: no issue has been OCR'd")
-    click.echo(f"exported {s['issues']} issues, {s['pages']} pages, {s['words']:,} words "
+    click.echo(f"exported {plural(s['issues'], 'issue')}, {plural(s['pages'], 'page')}, "
+               f"{plural(s['words'], 'word')} "
                f"-> {dest}")
 
 
@@ -516,7 +522,7 @@ def bag(titles, out, organization, contact_name, contact_email, check_path):
         s = make_bag(project, dest, slugs, info=info, log=click.echo)
     except BagError as e:
         raise click.ClickException(str(e))
-    click.echo(f"bagged {s['issues']} issues, {s['files']:,} files "
+    click.echo(f"bagged {plural(s['issues'], 'issue')}, {plural(s['files'], 'file')} "
                f"({s['bytes'] / 1e6:,.0f} MB) -> {s['path']}")
 
 
@@ -549,14 +555,14 @@ def build(out, url, base, images, image_width):
                        image_width=image_width, log=click.echo)
     except BuildError as e:
         raise click.ClickException(str(e))
-    click.echo(f"built {s['issues']} issues, {s['pages']} pages "
+    click.echo(f"built {plural(s['issues'], 'issue')}, {plural(s['pages'], 'page')} "
                f"({s['bytes'] / 1e6:.0f} MB) -> {dest}")
     if s["iiif"]:
         click.echo(f"IIIF: {s['iiif']} (once published)")
     else:
         click.echo("add --url <the site's address> to include IIIF manifests")
     if s["base"] == "/":
-        click.echo(f"preview: python -m http.server -d {dest} 8001   then open "
+        click.echo(f"preview: python3 -m http.server -d {dest} 8001   then open "
                    f"http://127.0.0.1:8001/")
     else:
         click.echo(f"to preview, the folder must be served at {s['base']}; or build again "
@@ -613,7 +619,8 @@ def status():
         span = f"{min(dates)} to {max(dates)}" if dates else "no dated issues"
         ocrd = sum(1 for d in dirs if (d / "full_text.json").exists())
         tocs = sum(1 for d in dirs if (d / "toc.json").exists())
-        click.echo(f"{t.name} ({slug}): {len(dirs)} issues, {pages} pages, {span}; "
+        click.echo(f"{t.name} ({slug}): {plural(len(dirs), 'issue')}, "
+                   f"{plural(pages, 'page')}, {span}; "
                    f"OCR'd {ocrd}/{len(dirs)}" + (f", enriched {tocs}" if tocs else ""))
         if undated:
             click.echo(f"  {len(undated)} undated: " + ", ".join(d.name for d in undated))

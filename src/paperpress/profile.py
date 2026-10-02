@@ -163,6 +163,9 @@ def draft_profile(project: Project, slug: str, llm: Callable, model: str, *,
     if not issues:
         raise ProfileError(f"no OCR'd issues of {slug} yet (run `paperpress ocr {slug}`)")
     chosen = sample_issues(issues, sample)
+    if len(chosen) < min(sample, 3):
+        log(f"  note: only {len(chosen)} OCR'd issue(s) to read, so the profile will be thin; "
+            f"draft it again with --force once more issues are OCR'd")
     log(f"  reading {len(chosen)} issue(s): " + ", ".join(d.name for d in chosen))
 
     def read_one(d: Path) -> dict:

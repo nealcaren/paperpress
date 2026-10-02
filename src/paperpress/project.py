@@ -226,6 +226,11 @@ def safe_name(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", s)
 
 
+def plural(n: int, word: str, words: str | None = None) -> str:
+    """"1 issue", "2 issues"."""
+    return f"{n:,} {word if n == 1 else (words or word + 's')}"
+
+
 def page_name(n: int) -> str:
     return f"page_{n:02d}"
 

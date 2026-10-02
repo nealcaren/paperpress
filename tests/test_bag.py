@@ -6,7 +6,8 @@ import pytest
 from paperpress.bag import BagError, check_bag, make_bag
 from paperpress.build import BuildError, build
 from paperpress.export import export
-from paperpress.project import OUTPUT_MARKER, Project, ProjectError, init_project
+from paperpress.project import (OUTPUT_MARKER, Project, ProjectError, init_project,
+                                read_issue, write_issue)
 from test_serve import make_issue
 
 
@@ -25,6 +26,10 @@ def project(tmp_path):
 
 
 def test_bag(project, tmp_path):
+    d = project.title_dir("wj") / "1912-02-03"
+    rec = read_issue(d)
+    rec["source"].update(type="pdf", path="/Users/someone/Dropbox/wj_02031912.pdf")
+    write_issue(d, rec)
     s = make_bag(project, tmp_path / "bag", info={"Source-Organization": "UNC",
                                                   "Contact-Name": None})
     bag = tmp_path / "bag"
@@ -34,6 +39,9 @@ def test_bag(project, tmp_path):
     assert (data / "titles/wj/_undated/mystery/issue.json").exists()
     assert (data / "titles/wj/profile.json").exists()
     assert (data / "export/dublin_core.csv").exists()
+    src = read_issue(data / "titles/wj/1912-02-03")["source"]
+    assert "path" not in src and src["filename"] == "wj_02031912.pdf"   # no local folders
+    assert read_issue(d)["source"]["path"]                               # project untouched
     assert not (data / "export" / OUTPUT_MARKER).exists()
     assert not list(data.rglob("*.tmp")) and not (data / ".paperpress").exists()
     info = (bag / "bag-info.txt").read_text()

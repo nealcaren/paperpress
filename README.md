@@ -120,6 +120,10 @@ Every row carries a citation you can paste into a footnote:
 The CSVs open cleanly in Excel. Check quotations against the page image before you
 cite them, because OCR makes mistakes.
 
+On a busy front page, the reading order can slip where the layout is complicated, so a
+page's text may run from one story into another. If you've run `enrich`,
+`articles.csv` is the cleaner unit for analysis: each row is one story's text.
+
 ### A website
 
 `paperpress build` writes `site/`: the same pages as `serve`, with search that runs
@@ -207,8 +211,11 @@ Each PDF is one issue, dated from its file name (`dth_03041960.pdf`,
 `1960-03-04.pdf`, …). paperpress works out the order of the date's digits from all
 the file names together. If it can't (every day in the batch is 12 or under, so March
 4 and April 3 look the same), it asks you for `--date-format MMDDYYYY`. Scanned pages
-are copied out of the PDF at their original quality. Adding the same file twice, even
-renamed, is skipped. Empty or broken files are reported and skipped.
+are copied out of the PDF as they are, except that scans finer than 300 ppi are
+reduced to 300 ppi, which is plenty for OCR (`--ppi 0` keeps them as they are).
+Adding the same file twice, even renamed, is skipped. Empty or broken files are
+reported and skipped. (Files in a Dropbox, OneDrive or iCloud folder that are "online
+only" look empty to paperpress: make the folder available offline first.)
 
 ## Page numbers and citations
 
@@ -242,7 +249,8 @@ an interrupted step leaves nothing half-written.
 
 To fix an issue by hand, edit its `issue.json`. You can correct `volume` and
 `number`, or add `"printed_offset": 40` if its printed page numbers are 40 more than
-their position.
+their position. The archive's name, shown on the site and in exports, is `name` under
+`[project]` in `paper.toml`; it starts as the project folder's name.
 
 ## Commands
 

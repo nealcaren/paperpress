@@ -24,6 +24,7 @@ from what's in the bag. Built in <bag>.partial and swapped in at the end.
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 from datetime import date
 from pathlib import Path
@@ -75,6 +76,17 @@ def _copy_tree(src: Path, dest: Path) -> int:
     return n
 
 
+def _drop_local_path(issue_json: Path) -> None:
+    """A PDF issue records where its file was on this computer (source.path), which
+    names the user's own folders; a deposit keeps only the file name."""
+    rec = json.loads(issue_json.read_text())
+    src = rec.get("source", {})
+    if src.get("path"):
+        src.setdefault("filename", Path(src["path"]).name)
+        del src["path"]
+        issue_json.write_text(json.dumps(rec, indent=2, ensure_ascii=False) + "\n")
+
+
 def _manifests(bag: Path, files: list[Path], prefix: str) -> None:
     lines = {a: [] for a in ALGORITHMS}
     for f in files:
@@ -107,6 +119,7 @@ def make_bag(project: Project, dest: Path, slugs: list[str] | None = None, *,
             log(f"copying {len(issues)} issue(s) of {project.titles[slug].name}")
             for d in issues:
                 _copy_tree(d, data / d.relative_to(project.root))
+                _drop_local_path(data / d.relative_to(project.root) / "issue.json")
                 n_issues += 1
             for extra in ("profile.json",):
                 f = project.title_dir(slug) / extra

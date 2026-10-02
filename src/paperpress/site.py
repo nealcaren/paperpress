@@ -27,7 +27,7 @@ from . import search as search_mod
 from .export import citation, human_date, page_span
 from .folios import printed, printed_pages
 from .ocr import NO_TEXT_STATUSES, region_text
-from .project import Project, page_name, read_issue
+from .project import Project, page_name, plural, read_issue
 
 PER_PAGE = 20
 
@@ -139,7 +139,7 @@ def page_home(cat: Catalog) -> str:
         status = "" if cat.static else \
             f'<p class="meta">{sum(i.ocrd for i in iss)} of {len(iss)} OCR\'d</p>'
         cards.append(f"""<a class="card title-card" href="{cat.href(f't/{slug}/')}">{cover}
-          <div><h2>{e(t.name)}</h2><p class="meta">{len(iss)} issues · {pages} pages
+          <div><h2>{e(t.name)}</h2><p class="meta">{plural(len(iss), 'issue')} · {plural(pages, 'page')}
           {f"· {span}" if span else ""}</p>{status}</div></a>""")
     body = f"""<h1>{e(p.name)}</h1>
       <div class="grid titles">{''.join(cards) or '<p>No titles in paper.toml yet.</p>'}</div>"""
