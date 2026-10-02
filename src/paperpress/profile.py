@@ -15,6 +15,7 @@ to correct, not a finished reference.
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -162,14 +163,17 @@ def draft_profile(project: Project, slug: str, llm: Callable, model: str, *,
     if not issues:
         raise ProfileError(f"no OCR'd issues of {slug} yet (run `paperpress ocr {slug}`)")
     chosen = sample_issues(issues, sample)
-    notes = []
-    for d in chosen:
+    log(f"  reading {len(chosen)} issue(s): " + ", ".join(d.name for d in chosen))
+
+    def read_one(d: Path) -> dict:
         date = read_issue(d).get("date") or d.name
-        log(f"  reading {d.name}")
         prompt = ISSUE_PROMPT.format(name=title.name, date=date, fields=FIELDS,
                                      digest=issue_digest(d))
         found = clean_profile(ask_json(llm, prompt, model, lambda x: isinstance(x, dict)))
-        notes.append({"issue": date, **found})
+        return {"issue": date, **found}
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        notes = list(pool.map(read_one, chosen))
     if len(notes) == 1:
         merged = notes[0]
         merged.pop("issue")

@@ -20,6 +20,11 @@ in newspaper reading order, column by column. From that it builds:
 An optional step uses an LLM to draft a table of contents for each issue, with
 headlines, bylines, sections, and stories that continue on a later page.
 
+**See it in action: [a demo archive](https://nealcaren.github.io/paperpress-demo/)** of
+three woman-suffrage papers, 15 issues from 1870 to 1917, built entirely by paperpress.
+Try searching for
+["silent sentinels"](https://nealcaren.github.io/paperpress-demo/search/?q=%22silent+sentinels%22).
+
 paperpress grew out of [The Negro World Archive](https://negroworldarchive.org). Its
 OCR comes from [newspaper-ocr](https://github.com/nealcaren/newspaper-ocr).
 
@@ -125,10 +130,10 @@ static host. For a GitHub Pages project site at `https://you.github.io/suffrage-
 paperpress build --base /suffrage-press/
 ```
 
-Page scans are copied into the site at 2,000 px wide, about 1 MB a page.
-GitHub Pages allows about 1 GB, which is roughly 1,000 pages. For bigger runs from the
+Page scans are copied into the site at 1,800 px wide, about 0.6 MB a page.
+GitHub Pages allows about 1 GB, which is roughly 1,500 pages. For bigger runs from the
 Internet Archive, `--images ia` shows each scan from IA's own image server instead;
-the sample site drops from 79 MB to 9 MB.
+the [demo site](https://nealcaren.github.io/paperpress-demo/) drops from 115 MB to 13 MB.
 
 **Publishing makes the scans and text public.** Make sure you have the right to share
 them.
@@ -145,15 +150,15 @@ headline, an author (only from a byline or signature, never a guess), a type (ne
 editorial, letter, poem, advertisement…), a section and a language. A second pass
 links stories that continue on another page. The archive then shows a contents list
 for each issue, and the export adds `articles.csv`. With the default models it costs
-**about 1–3 cents per issue**, and every run prints what it spent.
+**about 1–4 cents per issue**, and every run prints what it spent.
 
 ![The contents list for an issue of The Woman's Journal, with headlines, bylines, sections and printed page numbers](docs/images/contents.jpg)
 
 It does better when it knows the paper. `paperpress profile suffragist` reads six
 issues spread across the run and drafts `titles/suffragist/profile.json`: the regular
 sections and columns, the editors and contributors (with the ways OCR misspells their
-names), the organizations, the kinds of advertisers and the languages. It costs a few
-cents. Check the draft, fix what's wrong, add what you know, then run
+names), the organizations, the kinds of advertisers and the languages. It costs 5–20
+cents and takes a minute or two. Check the draft, fix what's wrong, add what you know, then run
 `paperpress enrich --force` to redo issues already done.
 
 Headlines and bylines come from OCR'd text and an LLM, so treat them as a finding aid,

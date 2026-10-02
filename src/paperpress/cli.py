@@ -413,7 +413,7 @@ def profile(title, sample, model, force):
     columns, contributors (with the ways OCR misspells them), organizations,
     advertisers and languages. `enrich` uses the profile to recognize sections
     and spell names. The draft is written to titles/<title>/profile.json for you
-    to check and edit. Costs a few cents.
+    to check and edit. Costs 5–20 cents with the default model.
     """
     from . import enrich as en
     from .profile import ProfileError, draft_profile, write_profile

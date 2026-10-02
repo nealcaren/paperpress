@@ -211,6 +211,8 @@ def _contents(cat: Catalog, issue: Issue, numbering: dict) -> str:
         where = page_span(printed(numbering, a["pages"]))
         by = f' <span class="by">{e(a["author"])}</span>' if a.get("author") else ""
         kind = a.get("section") or (a["type"] if a["type"] not in ("news", "other") else "")
+        if kind.casefold() in a["title"].casefold():          # "Notes of the Week  Notes of..."
+            kind = ""
         return (f'<li><a href="{e(href)}">{e(a["title"])}</a>{by}'
                 f'<span class="meta"> {e(kind)} · {where}</span></li>')
 
