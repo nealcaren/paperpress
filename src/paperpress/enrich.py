@@ -128,10 +128,10 @@ class LLM:
         return content
 
 
-def make_llm(settings: dict) -> LLM:
+def make_llm(settings: dict, stage: str = "enrich") -> LLM:
     key = os.environ.get(settings["api_key_env"])
     if not key:
-        raise EnrichError(f"set {settings['api_key_env']} to use enrich "
+        raise EnrichError(f"set {settings['api_key_env']} to use {stage} "
                           f"(an OpenRouter key by default: https://openrouter.ai/keys)")
     return LLM(settings["base_url"], key)
 

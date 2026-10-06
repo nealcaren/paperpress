@@ -1,7 +1,7 @@
 # Example project: three U.S. woman-suffrage periodicals on the Internet Archive.
 
 [project]
-name = "Suffrage Press"
+name = "paperpress demo"
 
 [[titles]]
 slug = "revolution"
@@ -20,3 +20,8 @@ slug = "suffragist"
 name = "The Suffragist"
 kind = "newspaper"
 ia_query = "collection:pub_the-suffragist"
+
+[[titles]]
+slug = "tranh-dau"
+name = "Tranh Đấu"
+kind = "newspaper"

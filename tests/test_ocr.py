@@ -80,3 +80,35 @@ def test_ocr_settings_come_from_paper_toml(tmp_path):
     cfg = init_project(tmp_path)
     cfg.write_text(cfg.read_text() + '[ocr]\nrecognizer = "glm-ocr"\n')
     assert Project.load(tmp_path).ocr == {"recognizer": "glm-ocr"}
+
+
+def test_engine_settings_and_recognizer_options(monkeypatch):
+    import sys
+    import types
+
+    made = {}
+
+    class Pipeline:
+        def __init__(self, **kw):
+            made.update(kw)
+
+    class Rec:
+        def __init__(self, **kw):
+            self.kw = kw
+
+    fake = types.ModuleType("newspaper_ocr")
+    fake.Pipeline = Pipeline
+    recs = types.ModuleType("newspaper_ocr.recognizers")
+    recs.RECOGNIZERS = {"glm-ocr": Rec}
+    monkeypatch.setitem(sys.modules, "newspaper_ocr", fake)
+    monkeypatch.setitem(sys.modules, "newspaper_ocr.recognizers", recs)
+
+    ocr.NewspaperOCR({"recognizer": "glm-ocr"})
+    assert "recognizer_model" not in made           # the Tesseract default stays with Tesseract
+    made.clear()
+    eng = ocr.NewspaperOCR({"recognizer": "glm-ocr", "recognizer_options": {"mode": "local"}})
+    assert made["recognizer"].kw == {"mode": "local"} and made["detector"] == "doclayout_yolo"
+    assert eng.settings["recognizer_options"] == {"mode": "local"}
+    made.clear()
+    ocr.NewspaperOCR({})
+    assert made["recognizer_model"] == "news_combo_fast"

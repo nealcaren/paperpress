@@ -16,7 +16,7 @@ logic (layout, recognition, region repair) there and issue/collection logic here
 uv venv && uv pip install -e '.[dev]'
 .venv/bin/pytest                                   # all tests (no network; IA calls are monkeypatched)
 .venv/bin/pytest tests/test_ia.py -k undated       # one test
-cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample project
+cd examples/demo && ../../.venv/bin/paperpress status   # live sample project
 ```
 
 ## Architecture
@@ -100,6 +100,14 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
   values from the source or a person are never replaced (with force, only enrich's own). The LLM is an injectable callable
   `(prompt, model, temperature) -> str`; the tests use a fake. `profile_block` also reads
   Negro World's profile keys.
+- `translate.py` (`paperpress translate`) is the optional LLM translation. Each page's regions
+  go out in chunks (~6,000 source chars) as `[rid] (label) text` lines; the reply must map
+  every id to a string (`ask_json` retries otherwise). It writes `translation.json`
+  (`pages[].regions = {rid: text}` plus `text` in reading order). Chunks are cached in
+  `.paperpress/translate/`, keyed by a hash of model, target, source and the chunk's regions.
+  It reuses enrich's `LLM`, `ask_json` and profile. The reader renders each translated region as
+  a second paragraph with the same `data-r` (classes `orig`/`tr`); app.js toggles
+  `.textpane[data-lang]` (orig/tr/both, kept in localStorage). Export adds `translation`.
 - `profile.py` (`paperpress profile <title>`) drafts `titles/<slug>/profile.json`: one LLM call
   per sampled issue (spread across the run) over a digest of every headline plus the head and
   tail of each text block (bylines and signatures sit at the ends), then one merge call that
@@ -116,7 +124,7 @@ cd examples/suffrage && ../../.venv/bin/paperpress status   # live sample projec
 - IA page records carry `source_index` (position at IA, used for `/page/n<index>` links) and
   `source_leaf` (scan leaf, from the canvas label, which `page_numbers.json` keys on). Issues
   fetched by 0.1 stored the position as `source_leaf`; `paperpress refresh` repairs them.
-- `cli.py` is the Click entry point (`paperpress init | title add | add ia | add pdf | refresh | ocr | profile | enrich | export | serve | build | bag | status`).
+- `cli.py` is the Click entry point (`paperpress init | title add | add ia | add pdf | refresh | ocr | profile | enrich | translate | export | serve | build | bag | status`).
   `title add` appends a `[[titles]]` block as text (`project.add_title`), so comments in
   paper.toml survive. `--ia` turns a collection or any one issue's URL into
   `collection:<pub_…>` (`ia.query_for`). `ia.count` uses advancedsearch's `numFound`,

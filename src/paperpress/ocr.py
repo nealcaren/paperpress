@@ -30,7 +30,8 @@ DEFAULT_OCR = {
     "recognizer": "tesseract",
     "recognizer_model": "news_combo_fast",
 }
-ENGINE_KEYS = {"detector", "recognizer", "recognizer_model", "hole_fill_detector", "device"}
+ENGINE_KEYS = {"detector", "recognizer", "recognizer_model", "hole_fill_detector", "device",
+               "recognizer_options"}
 NO_TEXT_STATUSES = {"timeout", "error"}     # their `text` is a placeholder, not page text
 
 
@@ -46,10 +47,24 @@ class NewspaperOCR:
         unknown = set(settings or {}) - ENGINE_KEYS
         if unknown:
             raise ValueError(f"unknown [ocr] setting(s): {', '.join(sorted(unknown))}")
-        self.settings = {**DEFAULT_OCR, **(settings or {})}
+        settings = dict(settings or {})
+        if settings.get("recognizer", DEFAULT_OCR["recognizer"]) != DEFAULT_OCR["recognizer"]:
+            # the default recognizer_model is a Tesseract model; don't hand it to another engine
+            self.settings = {"detector": DEFAULT_OCR["detector"], **settings}
+        else:
+            self.settings = {**DEFAULT_OCR, **settings}
         from newspaper_ocr import Pipeline
 
-        self.pipe = Pipeline(output="json", **self.settings)
+        kwargs = dict(self.settings)
+        options = kwargs.pop("recognizer_options", None)
+        if options:
+            # e.g. [ocr.recognizer_options] mode = "local" for GLM-OCR without a server:
+            # build the recognizer ourselves, since Pipeline only passes it a model name
+            from newspaper_ocr.recognizers import RECOGNIZERS
+
+            kwargs["recognizer"] = RECOGNIZERS.get(kwargs["recognizer"])(**options)
+            kwargs.pop("recognizer_model", None)
+        self.pipe = Pipeline(output="json", **kwargs)
 
     def describe(self) -> dict:
         from importlib.metadata import version

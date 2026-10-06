@@ -20,10 +20,13 @@ in newspaper reading order, column by column. From that it builds:
 An optional step uses an LLM to draft a table of contents for each issue, with
 headlines, bylines, sections, and stories that continue on a later page.
 
-**See it in action: [a demo archive](https://nealcaren.github.io/paperpress-demo/)** of
-three woman-suffrage papers, 15 issues from 1870 to 1917, built entirely by paperpress.
-Try searching for
-["silent sentinels"](https://nealcaren.github.io/paperpress-demo/search/?q=%22silent+sentinels%22).
+**See it in action: [a demo archive](https://nealcaren.github.io/paperpress-demo/)**,
+built entirely by paperpress: 15 issues of three U.S. woman-suffrage papers from 1870 to
+1917, and an issue of the Vietnamese paper
+[*Tranh Đấu*](https://nealcaren.github.io/paperpress-demo/t/tranh-dau/1939-07-13/p/1/)
+from 1939 with an English translation beside the original. Try searching for
+["silent sentinels"](https://nealcaren.github.io/paperpress-demo/search/?q=%22silent+sentinels%22)
+or [Bastille](https://nealcaren.github.io/paperpress-demo/search/?q=Bastille).
 
 paperpress grew out of [The Negro World Archive](https://negroworldarchive.org). Its
 OCR comes from [newspaper-ocr](https://github.com/nealcaren/newspaper-ocr).
@@ -180,6 +183,21 @@ cents and takes a minute or two. Check the draft, fix what's wrong, add what you
 Headlines and bylines come from OCR'd text and an LLM, so treat them as a finding aid,
 not a catalogue record.
 
+### A translation (optional)
+
+```bash
+export OPENROUTER_API_KEY=...
+paperpress translate --source Vietnamese          # into English by default; --target French
+```
+
+For a periodical in another language, an LLM translates each page region by region:
+every headline, paragraph and caption separately, so the reader can show the translation
+beside the scan with the same boxes. Buttons above the text switch between the original,
+the translation, or both; search covers both; and `export` adds a `translation` column to
+`pages.csv`. Set defaults in a `[translate]` table in paper.toml (`model`, `target`,
+`source`). It translates the OCR, errors and all, so treat it as a reading aid and
+check anything you quote against the scan.
+
 ### For libraries and archives
 
 paperpress also writes the standard formats that library systems take in:
@@ -321,9 +339,9 @@ uv venv && uv pip install -e '.[dev]'
 .venv/bin/pytest
 ```
 
-The tests need no network or OCR models. `examples/` has two sample projects: three
-suffrage papers from the Internet Archive, and *The Daily Tar Heel* from a folder of
-PDFs.
+The tests need no network or OCR models. `examples/` has two sample projects: `demo`,
+the demo site's project (three suffrage papers from the Internet Archive and *Tranh Đấu*
+from a PDF), and *The Daily Tar Heel* from a folder of PDFs.
 
 ## License
 

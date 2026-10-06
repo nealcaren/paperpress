@@ -24,12 +24,15 @@ from pathlib import Path
 from typing import Callable
 
 from . import search as search_mod
+from . import translate as translate_mod
 from .export import citation, human_date, page_span
 from .folios import printed, printed_pages
 from .ocr import NO_TEXT_STATUSES, region_text
 from .project import Project, page_name, plural, read_issue
 
 PER_PAGE = 20
+LANG_TAGS = {"english": "en", "french": "fr", "german": "de", "spanish": "es",
+             "vietnamese": "vi", "italian": "it", "portuguese": "pt", "chinese": "zh"}
 
 
 # --- catalog ---------------------------------------------------------------
@@ -256,17 +259,24 @@ def page_reader(cat: Catalog, issue: Issue, n: int, q: str = "", select: str = "
     total = len(issue.rec["pages"])
     ocr_file = issue.dir / f"{page_name(n)}.json"
     rx = _highlighter(q)
+    tr_doc = translate_mod.load(issue.dir)
+    tr_page = translate_mod.page_translation(tr_doc, n)
+    tr_regions = (tr_page or {}).get("regions", {})
     regions_svg, regions_txt, w, h = [], [], meta.get("width"), meta.get("height")
+
+    def mark(text):
+        body = e(text)
+        return rx.sub(lambda m: f"<mark>{m.group(0)}</mark>", body) if rx else body
+
     if ocr_file.exists():
         page = json.loads(ocr_file.read_text())
         w, h = page.get("width", w), page.get("height", h)
         for r in page.get("regions", []):
             text = region_text(r.get("text", "")) if r.get("status") not in NO_TEXT_STATUSES \
                 else ""
-            body = e(text)
-            hit = bool(rx and text and rx.search(text))
-            if rx:
-                body = rx.sub(lambda m: f"<mark>{m.group(0)}</mark>", body)
+            body = mark(text)
+            tr_text = tr_regions.get(r["id"], "") if text else ""
+            hit = bool(rx and text and (rx.search(text) or rx.search(tr_text)))
             b = r["bbox"]
             # labels are prefixed: DocLayout has a label called "text", which as a bare
             # class would collide with the page's own class names
@@ -278,8 +288,12 @@ def page_reader(cat: Catalog, issue: Issue, n: int, q: str = "", select: str = "
                     if r.get("status") != "ok" and not cat.static else "")
             tag = "h3" if r.get("label") in ("title", "doc_title") else "p"
             if text or flag:
-                regions_txt.append(f'<{tag} class="{cls}" data-r="{e(r["id"])}">'
+                orig = " orig" if tr_page else ""
+                regions_txt.append(f'<{tag} class="{cls}{orig}" data-r="{e(r["id"])}">'
                                    f'{body}{flag}</{tag}>')
+            if tr_text:
+                regions_txt.append(f'<{tag} class="{cls} tr" data-r="{e(r["id"])}" '
+                                   f'lang="{e(_lang_tag(tr_doc))}">{mark(tr_text)}</{tag}>')
         text_pane = "".join(regions_txt) or '<p class="note">No text found on this page.</p>'
     else:
         text_pane = ('<p class="note">This page hasn’t been OCR’d yet.</p>' if cat.static else
@@ -317,13 +331,32 @@ def page_reader(cat: Catalog, issue: Issue, n: int, q: str = "", select: str = "
   </section>
   <aside class="textpane" data-pagefind-body{index_attrs}>{year}
     <p class="cite" data-pagefind-ignore>{e(cite)} <button type="button" class="copy"
-      data-copy="{e(cite)}">Copy citation</button></p>
+      data-copy="{e(cite)}">Copy citation</button></p>{_lang_switch(tr_doc, tr_page)}
     {text_pane}
   </aside>
 </div>"""
     return layout(cat, cite, body, q=q, crumbs=[(t.name, cat.href(f"t/{issue.slug}/")),
                                                  (issue.label, cat.href(issue.path)),
                                                  (f"Page {n}", None)])
+
+
+def _lang_tag(doc: dict) -> str:
+    target = (doc or {}).get("target", "")
+    return LANG_TAGS.get(target.lower(), target.lower()[:2])
+
+
+def _lang_switch(doc: dict | None, page: dict | None) -> str:
+    """Buttons to show the original, the translation, or both (app.js keeps the
+    choice); the page opens on the translation."""
+    if not page:
+        return ""
+    model = doc.get("translate", {}).get("model", "")
+    return (f'<div class="langs" data-pagefind-ignore role="group" aria-label="Text shown">'
+            f'<button type="button" data-lang="orig">Original</button>'
+            f'<button type="button" data-lang="tr">{e(doc.get("target", "Translation"))}</button>'
+            f'<button type="button" data-lang="both">Both</button>'
+            f'<span class="small meta" title="{e(model)}">Machine translation of the OCR</span>'
+            f'</div>')
 
 
 def _search_form(cat: Catalog, q: str, slug: str | None, sort: str, extra: str) -> str:
@@ -449,6 +482,11 @@ rect.r.sel{stroke:var(--sel);stroke-width:3;fill:rgba(30,110,200,.12)}
 .textpane p.r,.textpane h3.r{padding:4px 8px;margin:0 0 10px;border-left:3px solid transparent;cursor:pointer}
 .textpane h3.r{font-size:1.1rem}.textpane .r.sel{border-left-color:var(--sel);background:var(--card)}
 .textpane .lab-abandon,.textpane .lab-figure,.textpane .lab-figure_caption{color:var(--muted);font-size:.92rem}
+.langs{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin:0 0 12px;font-family:system-ui,sans-serif}
+.langs button{font-size:.85rem;padding:2px 10px}.langs button[aria-pressed=true]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.langs .meta{margin-left:6px}
+.textpane[data-lang=tr] .orig,.textpane[data-lang=orig] .tr{display:none}
+.textpane[data-lang=both] .tr{margin-top:-8px;color:var(--muted);font-style:italic}
 .flag{font:.75rem system-ui;color:#fff;background:#a33;border-radius:3px;padding:0 4px;margin-left:6px}
 @media (max-width:820px){main{padding:12px 16px}.reader{grid-template-columns:1fr;height:auto}
 .scroller{height:70vh}.textpane{overflow:visible}.top{flex-wrap:wrap}.searchbox input{width:100%}}
@@ -529,12 +567,25 @@ JS = r"""
       reader.querySelector(`rect[data-r="${el.dataset.r}"]`)?.classList.add('hit'); }
   });
 
+  // original / translation / both: the choice is remembered across pages
+  const langs = textPane.querySelector('.langs');
+  if (langs) {
+    const setLang = l => {
+      textPane.dataset.lang = l;
+      langs.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === l));
+      try { localStorage.setItem('paperpress-lang', l); } catch (e) {}
+    };
+    let saved = null; try { saved = localStorage.getItem('paperpress-lang'); } catch (e) {}
+    setLang(['orig', 'tr', 'both'].includes(saved) ? saved : 'tr');
+    langs.addEventListener('click', ev => { const b = ev.target.closest('[data-lang]'); if (b) setLang(b.dataset.lang); });
+  }
   const showBox = (id, scrollText, smooth = true) => {
     const behavior = smooth ? 'smooth' : 'auto';
     reader.querySelectorAll('.sel').forEach(n => n.classList.remove('sel'));
     const rect = reader.querySelector(`rect[data-r="${id}"]`);
-    const para = reader.querySelector(`.textpane [data-r="${id}"]`);
-    rect?.classList.add('sel'); para?.classList.add('sel');
+    const paras = [...reader.querySelectorAll(`.textpane [data-r="${id}"]`)];
+    const para = paras.find(p => p.offsetParent !== null) || paras[0];
+    rect?.classList.add('sel'); paras.forEach(p => p.classList.add('sel'));
     if (scrollText && para) {
       // set scrollTop directly: scrollIntoView would also try to scroll the
       // image pane and the window, and the two animations fight
@@ -561,7 +612,7 @@ JS = r"""
   // hit once the page has fully laid out (before the scan loads the canvas has
   // no height, so scroll positions get clamped). Instant, not smooth: smooth
   // scrolls started during page load get cut short.
-  const firstHit = reader.querySelector('.textpane .hit');
+  const firstHit = [...reader.querySelectorAll('.textpane .hit')].find(p => p.offsetParent !== null);
   const target = reader.dataset.select || params.get('r') || firstHit?.dataset.r;
   const jump = () => target && requestAnimationFrame(() => showBox(target, true, false));
   if (document.readyState === 'complete') jump(); else addEventListener('load', jump, {once: true});

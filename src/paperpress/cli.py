@@ -408,6 +408,81 @@ def enrich(titles, date_from, date_to, limit, model, stitch_model, force):
 
 
 @main.command()
+@click.argument("titles", nargs=-1)
+@click.option("--from", "date_from", help="Only issues on or after this date (YYYY-MM-DD).")
+@click.option("--to", "date_to", help="Only issues on or before this date (YYYY-MM-DD).")
+@click.option("--limit", type=int, help="Translate at most this many issues this run.")
+@click.option("--model", help="Model to use (overrides paper.toml).")
+@click.option("--target", help="Language to translate into (default: English).")
+@click.option("--source", help="The original's language, if the model should be told.")
+@click.option("--force", is_flag=True, help="Redo issues (and pages) already translated.")
+def translate(titles, date_from, date_to, limit, model, target, source, force):
+    """Optional: translate each page's OCR with an LLM.
+
+    Every region (headline, paragraph, caption) is translated on its own, so
+    the reader shows the translation box by box beside the scan. Needs an API
+    key (OPENROUTER_API_KEY by default) and costs money: a few cents per page
+    with the default model. Issues must be OCR'd first.
+    """
+    from . import enrich as en
+    from . import translate as tr
+
+    project = _project()
+    try:
+        slugs = [project.title(t).slug for t in titles] or list(project.titles)
+    except ProjectError as e:
+        raise click.ClickException(str(e))
+    settings = {**tr.DEFAULT_TRANSLATE, **project.translate}
+    for k, v in (("model", model), ("target", target), ("source", source)):
+        if v:
+            settings[k] = v
+    todo, not_ocrd = [], 0
+    for slug in slugs:
+        for d in project.issue_dirs(slug, include_undated=True):
+            date = DATE_DIR.match(d.name)
+            if (date_from or date_to) and not date:
+                continue
+            if date and ((date_from and date[1] < date_from) or (date_to and date[1] > date_to)):
+                continue
+            if not (d / "full_text.json").exists():
+                not_ocrd += 1
+            elif force or not tr.is_done(d):
+                todo.append(d)
+    if limit:
+        todo = todo[:limit]
+    if not_ocrd:
+        click.echo(f"skipping {not_ocrd} issue(s) not OCR'd yet")
+    if not todo:
+        click.echo("nothing to translate (every OCR'd issue has a translation.json; "
+                   "--force to redo)")
+        return
+    try:
+        llm = en.make_llm(settings, "translate")
+    except en.EnrichError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"translate: {len(todo)} issue(s) into {settings['target']} "
+               f"with {settings['model']}")
+    failed = []
+    for n, d in enumerate(todo, start=1):
+        rel = d.relative_to(project.root / "titles")
+        before = llm.cost
+        try:
+            s = tr.translate_issue(project, d, llm, settings, force=force)
+        except (en.EnrichError, OSError, ValueError) as e:
+            failed.append(d)
+            click.echo(f"[{n}/{len(todo)}] FAILED {rel}: {e}", err=True)
+            continue
+        cost = f", ${llm.cost - before:.3f}" if llm.cost else ""
+        click.echo(f"[{n}/{len(todo)}] {rel}: {plural(s['pages'], 'page')}, "
+                   f"{plural(s['regions'], 'region')}{cost}")
+    if llm.cost:
+        click.echo(f"total cost ${llm.cost:.2f} ({llm.tokens:,} tokens)")
+    if failed:
+        raise click.ClickException(f"{len(failed)} issue(s) failed; re-run to retry "
+                                   f"(finished chunks are cached)")
+
+
+@main.command()
 @click.argument("title")
 @click.option("--sample", type=int, default=6, show_default=True,
               help="How many issues to read, spread across the run.")
@@ -621,9 +696,11 @@ def status():
         span = f"{min(dates)} to {max(dates)}" if dates else "no dated issues"
         ocrd = sum(1 for d in dirs if (d / "full_text.json").exists())
         tocs = sum(1 for d in dirs if (d / "toc.json").exists())
+        trs = sum(1 for d in dirs if (d / "translation.json").exists())
         click.echo(f"{t.name} ({slug}): {plural(len(dirs), 'issue')}, "
                    f"{plural(pages, 'page')}, {span}; "
-                   f"OCR'd {ocrd}/{len(dirs)}" + (f", enriched {tocs}" if tocs else ""))
+                   f"OCR'd {ocrd}/{len(dirs)}" + (f", enriched {tocs}" if tocs else "")
+                   + (f", translated {trs}" if trs else ""))
         if undated:
             click.echo(f"  {len(undated)} undated: " + ", ".join(d.name for d in undated))
         dup = [d for d, c in dates.items() if c > 1]
