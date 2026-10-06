@@ -52,6 +52,12 @@ name = "{name}"
 # [enrich]
 # model = "openai/gpt-5.6-luna"            # per-page article extraction
 # stitch_model = "google/gemini-3.8-flash" # links stories continued across pages
+
+# Optional LLM translation (`paperpress translate`); needs OPENROUTER_API_KEY:
+# [translate]
+# model = "google/gemini-3.8-flash"
+# target = "English"                       # the language to translate into
+# source = "French"                        # the original's language (optional)
 '''
 
 
@@ -75,6 +81,7 @@ class Project:
     titles: dict[str, Title]
     ocr: dict = field(default_factory=dict)      # the [ocr] table: newspaper-ocr settings
     enrich: dict = field(default_factory=dict)   # the [enrich] table: LLM table of contents
+    translate: dict = field(default_factory=dict)  # the [translate] table: LLM translation
 
     @classmethod
     def load(cls, start: Path | str = ".") -> "Project":
@@ -106,7 +113,8 @@ class Project:
                 ia_query=t.get("ia_query"),
                 extra={k: v for k, v in t.items() if k not in known})
         return cls(root=cfg.parent, name=data.get("project", {}).get("name", cfg.parent.name),
-                   titles=titles, ocr=data.get("ocr", {}), enrich=data.get("enrich", {}))
+                   titles=titles, ocr=data.get("ocr", {}), enrich=data.get("enrich", {}),
+                   translate=data.get("translate", {}))
 
     def title(self, slug: str) -> Title:
         if slug not in self.titles:

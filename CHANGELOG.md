@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `paperpress translate`: an LLM translates each page region by region into `translation.json`;
+  the reader switches between the original, the translation, or both, search covers both,
+  and `export` adds a `translation` column. Settings in a `[translate]` table.
+- `[ocr.recognizer_options]` passes options to the recognizer, e.g. `mode = "local"` so
+  GLM-OCR loads its model itself instead of calling a server.
+- A non-Tesseract recognizer no longer receives the default Tesseract model name.
+- The demo site adds *Tranh Đấu* (Vietnamese, 1939) with an English translation;
+  `examples/suffrage` is now `examples/demo`.
+
 ## 0.2.0 (2026-10-02)
 
 First release on PyPI: `uv tool install paperpress`.

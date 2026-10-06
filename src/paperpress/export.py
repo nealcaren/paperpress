@@ -30,12 +30,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import __version__
+from . import translate as translate_mod
 from .folios import printed, printed_pages
 from .project import Project, check_output, read_issue, replace_output
 
 PAGE_FIELDS = ["id", "title", "title_name", "date", "date_precision", "volume", "number",
                "page", "printed_page", "pages_in_issue", "words", "citation", "source", "source_id",
-               "source_url", "source_file", "image", "ocr_engine", "text"]
+               "source_url", "source_file", "image", "ocr_engine", "text", "translation"]
 ARTICLE_FIELDS = ["id", "title", "title_name", "date", "date_precision", "volume", "number",
                   "headline", "author", "author_confidence", "type", "section", "language",
                   "is_advertisement", "start_page", "pages", "printed_pages", "continued", "words", "citation",
@@ -165,6 +166,7 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
                 engine = full.get("ocr", {}).get("engine")
                 numbering = printed_pages(d, rec)
                 page_meta = {p["page"]: p for p in rec["pages"]}
+                translation = translate_mod.load(d)
                 issue_words = 0
                 for pg in full["pages"]:
                     words = len(pg["text"].split())
@@ -184,6 +186,8 @@ def export(project: Project, slugs: list[str], dest: Path, *, txt: bool = False)
                         "image": str((d / meta["image"]).relative_to(project.root))
                                  if meta.get("image") else None,
                         "ocr_engine": engine, "text": pg["text"],
+                        "translation": (translate_mod.page_translation(translation, pg["page"])
+                                        or {}).get("text"),
                     }
                     jl.write(json.dumps(row, ensure_ascii=False) + "\n")
                     pages_csv.writerow(row)
@@ -294,7 +298,8 @@ def _write_articles(d: Path, rec: dict, title, page_meta: dict, numbering: dict,
 def _readme(project: Project, slugs, n_issues, n_pages, n_words, txt, n_articles=0) -> str:
     titles = "\n".join(f"  {project.titles[s].name} ({s})" for s in slugs)
     files = ["pages.jsonl   one JSON record per page (same columns as pages.csv)",
-             "pages.csv     one row per page; `text` is the page's OCR in reading order",
+             "pages.csv     one row per page; `text` is the page's OCR in reading order, "
+             "`translation`\n              its machine translation (after `paperpress translate`)",
              "issues.csv    one row per issue, without text",
              "dublin_core.csv   one row per issue in Dublin Core (dcterms) and BIBO terms,\n"
              "              for importing into Omeka, CONTENTdm and other repository systems"]
